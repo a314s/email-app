@@ -16,12 +16,19 @@
         <div class="main-content">
             <div class="sidebar">
                 <div class="section">
-                    <h3>Google Sheet Configuration</h3>
-                    <div class="form-group">
-                        <label for="spreadsheetId">Spreadsheet ID:</label>
-                        <input type="text" id="spreadsheetId" placeholder="Enter Google Sheet ID">
+                    <h3>Excel File Configuration</h3>
+                    <div class="excel-upload">
+                        <label for="excelFile">Upload Excel File:</label>
+                        <input type="file" id="excelFile" accept=".xlsx,.xls">
+                        <button id="uploadExcel" class="btn primary"><i class="fas fa-upload"></i> Upload</button>
                     </div>
-                    <button id="loadSheets" class="btn primary"><i class="fas fa-sync"></i> Load Sheets</button>
+                    
+                    <div class="form-group">
+                        <label for="excelSelect">Or Select Existing File:</label>
+                        <select id="excelSelect">
+                            <option value="">Select a file...</option>
+                        </select>
+                    </div>
                     
                     <div class="form-group">
                         <label for="sheetSelect">Select Sheet:</label>
@@ -115,6 +122,20 @@
                     <div class="email-body">
                         <label for="emailContent">Content:</label>
                         <textarea id="emailContent" rows="10"></textarea>
+                    </div>
+                    
+                    <div class="email-preview">
+                        <div class="email-preview-header">
+                            <div class="preview-field">
+                                <span class="preview-label">To:</span>
+                                <span id="previewTo"></span>
+                            </div>
+                            <div class="preview-field">
+                                <span class="preview-label">Subject:</span>
+                                <span id="previewSubject"></span>
+                            </div>
+                        </div>
+                        <div class="email-preview-content" id="previewContent"></div>
                     </div>
                     
                     <div class="email-actions">

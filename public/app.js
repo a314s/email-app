@@ -1,8 +1,9 @@
 // DOM Elements
 const elements = {
-    // Google Sheet Configuration
-    spreadsheetId: document.getElementById('spreadsheetId'),
-    loadSheets: document.getElementById('loadSheets'),
+    // Excel File Configuration
+    excelFile: document.getElementById('excelFile'),
+    uploadExcel: document.getElementById('uploadExcel'),
+    excelSelect: document.getElementById('excelSelect'),
     sheetSelect: document.getElementById('sheetSelect'),
     loadContacts: document.getElementById('loadContacts'),
     
@@ -37,6 +38,9 @@ const elements = {
     emailTo: document.getElementById('emailTo'),
     emailSubject: document.getElementById('emailSubject'),
     emailContent: document.getElementById('emailContent'),
+    previewTo: document.getElementById('previewTo'),
+    previewSubject: document.getElementById('previewSubject'),
+    previewContent: document.getElementById('previewContent'),
     sendEmail: document.getElementById('sendEmail'),
     openInOutlook: document.getElementById('openInOutlook'),
     backToContact: document.getElementById('backToContact'),
@@ -53,7 +57,8 @@ const elements = {
 
 // App State
 const state = {
-    spreadsheetId: '',
+    excelFiles: [],
+    selectedExcelFile: '',
     selectedSheet: '',
     sheetData: null,
     currentContact: null,
@@ -64,10 +69,55 @@ const state = {
 
 // API Functions
 const api = {
-    async fetchSheets(spreadsheetId) {
+    async uploadExcelFile(file) {
         showLoading(true);
         try {
-            const response = await fetch(`/api/sheets/${spreadsheetId}`);
+            const formData = new FormData();
+            formData.append('excelFile', file);
+            
+            const response = await fetch('/api/excel/upload', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const data = await response.json();
+            
+            if (!data.success) {
+                throw new Error(data.error || 'Failed to upload Excel file');
+            }
+            
+            return data;
+        } catch (error) {
+            showToast(error.message, 'error');
+            throw error;
+        } finally {
+            showLoading(false);
+        }
+    },
+    
+    async fetchExcelFiles() {
+        showLoading(true);
+        try {
+            const response = await fetch('/api/excel/files');
+            const data = await response.json();
+            
+            if (!data.success) {
+                throw new Error(data.error || 'Failed to fetch Excel files');
+            }
+            
+            return data.files;
+        } catch (error) {
+            showToast(error.message, 'error');
+            throw error;
+        } finally {
+            showLoading(false);
+        }
+    },
+    
+    async fetchSheets(filename) {
+        showLoading(true);
+        try {
+            const response = await fetch(`/api/excel/${encodeURIComponent(filename)}/sheets`);
             const data = await response.json();
             
             if (!data.success) {
@@ -83,10 +133,10 @@ const api = {
         }
     },
     
-    async fetchSheetData(spreadsheetId, sheetName) {
+    async fetchSheetData(filename, sheetName) {
         showLoading(true);
         try {
-            const response = await fetch(`/api/sheets/${spreadsheetId}/${sheetName}`);
+            const response = await fetch(`/api/excel/${encodeURIComponent(filename)}/${encodeURIComponent(sheetName)}`);
             const data = await response.json();
             
             if (!data.success) {
@@ -102,10 +152,10 @@ const api = {
         }
     },
     
-    async fetchContactByLine(spreadsheetId, sheetName, lineNumber) {
+    async fetchContactByLine(filename, sheetName, lineNumber) {
         showLoading(true);
         try {
-            const response = await fetch(`/api/contact/line/${spreadsheetId}/${sheetName}/${lineNumber}`);
+            const response = await fetch(`/api/contact/line/${encodeURIComponent(filename)}/${encodeURIComponent(sheetName)}/${lineNumber}`);
             const data = await response.json();
             
             if (!data.success) {
@@ -121,10 +171,10 @@ const api = {
         }
     },
     
-    async fetchContactByName(spreadsheetId, sheetName, name) {
+    async fetchContactByName(filename, sheetName, name) {
         showLoading(true);
         try {
-            const response = await fetch(`/api/contact/name/${spreadsheetId}/${sheetName}/${encodeURIComponent(name)}`);
+            const response = await fetch(`/api/contact/name/${encodeURIComponent(filename)}/${encodeURIComponent(sheetName)}/${encodeURIComponent(name)}`);
             const data = await response.json();
             
             if (!data.success) {
@@ -312,7 +362,40 @@ function populateContactDetails(contact) {
         
         const valueElement = document.createElement('div');
         valueElement.className = 'value';
-        valueElement.textContent = value || 'N/A';
+        
+        // Check if the value is empty or not
+        if (value) {
+            valueElement.classList.add('has-data');
+            
+            // Check if the value is an email
+            if (key.toLowerCase().includes('email') && isValidEmail(value)) {
+                const link = document.createElement('a');
+                link.href = `mailto:${value}`;
+                link.textContent = value;
+                valueElement.appendChild(link);
+            } 
+            // Check if the value is a URL
+            else if (isValidURL(value)) {
+                const link = document.createElement('a');
+                link.href = value.startsWith('http') ? value : `https://${value}`;
+                link.textContent = value;
+                link.target = '_blank';
+                link.rel = 'noopener noreferrer';
+                valueElement.appendChild(link);
+            } 
+            // Check if the value is a phone number
+            else if (key.toLowerCase().includes('phone') || key.toLowerCase().includes('mobile') || key.toLowerCase().includes('tel')) {
+                const link = document.createElement('a');
+                link.href = `tel:${value.replace(/\D/g, '')}`;
+                link.textContent = value;
+                valueElement.appendChild(link);
+            } 
+            else {
+                valueElement.textContent = value;
+            }
+        } else {
+            valueElement.textContent = 'N/A';
+        }
         
         detailItem.appendChild(label);
         detailItem.appendChild(valueElement);
@@ -330,6 +413,25 @@ function populateContactDetails(contact) {
 function showContactNotFound() {
     elements.contactDetails.classList.add('hidden');
     elements.noContactFound.classList.remove('hidden');
+}
+
+function populateExcelSelect(files) {
+    // Clear previous options
+    elements.excelSelect.innerHTML = '';
+    
+    // Add default option
+    const defaultOption = document.createElement('option');
+    defaultOption.value = '';
+    defaultOption.textContent = 'Select a file...';
+    elements.excelSelect.appendChild(defaultOption);
+    
+    // Add options for each file
+    files.forEach(file => {
+        const option = document.createElement('option');
+        option.value = file.filename;
+        option.textContent = file.filename;
+        elements.excelSelect.appendChild(option);
+    });
 }
 
 function populateSheetSelect(sheets) {
@@ -470,23 +572,93 @@ function populateDataTable(data) {
     elements.contactsTable.appendChild(tbody);
 }
 
+// Helper function to check if a string is a valid email
+function isValidEmail(email) {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+}
+
+// Helper function to check if a string is a valid URL
+function isValidURL(url) {
+    // Simple check for common domain extensions or www
+    return /\.(com|org|net|io|gov|edu|co|uk|de|fr|it|es|nl|ru|jp|cn|in|au|ca|br|mx)$/i.test(url) || 
+           /^www\./i.test(url) || 
+           /^http(s)?:\/\//i.test(url);
+}
+
+// Update email preview as user types
+function updateEmailPreview() {
+    elements.previewTo.textContent = elements.emailTo.value;
+    elements.previewSubject.textContent = elements.emailSubject.value;
+    
+    // Convert plain text to HTML with line breaks
+    const content = elements.emailContent.value
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\n/g, '<br>');
+    
+    elements.previewContent.innerHTML = content;
+}
+
 // Event Handlers
 function setupEventListeners() {
-    // Load Sheets Button
-    elements.loadSheets.addEventListener('click', async () => {
-        const spreadsheetId = elements.spreadsheetId.value.trim();
+    // Upload Excel Button
+    elements.uploadExcel.addEventListener('click', async () => {
+        const file = elements.excelFile.files[0];
         
-        if (!spreadsheetId) {
-            showToast('Please enter a Spreadsheet ID', 'warning');
+        if (!file) {
+            showToast('Please select an Excel file', 'warning');
+            return;
+        }
+        
+        if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
+            showToast('Please select an Excel file (.xlsx or .xls)', 'warning');
             return;
         }
         
         try {
-            state.spreadsheetId = spreadsheetId;
-            const sheets = await api.fetchSheets(spreadsheetId);
+            const result = await api.uploadExcelFile(file);
+            showToast('Excel file uploaded successfully', 'success');
+            
+            // Update the Excel files list
+            const files = await api.fetchExcelFiles();
+            state.excelFiles = files;
+            populateExcelSelect(files);
+            
+            // Set the selected file
+            state.selectedExcelFile = result.filename;
+            elements.excelSelect.value = result.filename;
+            
+            // Load sheets for the uploaded file
+            const sheets = result.sheets;
+            populateSheetSelect(sheets);
+            
+            // Reset sheet selection
+            state.selectedSheet = '';
+            elements.loadContacts.disabled = true;
+        } catch (error) {
+            console.error('Error uploading Excel file:', error);
+        }
+    });
+    
+    // Excel Select
+    elements.excelSelect.addEventListener('change', async () => {
+        const selectedFile = elements.excelSelect.value;
+        
+        if (!selectedFile) {
+            elements.sheetSelect.disabled = true;
+            elements.sheetSelect.innerHTML = '<option value="">Select a sheet...</option>';
+            elements.loadContacts.disabled = true;
+            return;
+        }
+        
+        state.selectedExcelFile = selectedFile;
+        
+        try {
+            const sheets = await api.fetchSheets(selectedFile);
             populateSheetSelect(sheets);
             elements.loadContacts.disabled = true;
-            showToast('Sheets loaded successfully', 'success');
         } catch (error) {
             console.error('Error loading sheets:', error);
         }
@@ -501,8 +673,13 @@ function setupEventListeners() {
     
     // Load Contacts Button
     elements.loadContacts.addEventListener('click', async () => {
+        if (!state.selectedExcelFile || !state.selectedSheet) {
+            showToast('Please select an Excel file and sheet', 'warning');
+            return;
+        }
+        
         try {
-            const data = await api.fetchSheetData(state.spreadsheetId, state.selectedSheet);
+            const data = await api.fetchSheetData(state.selectedExcelFile, state.selectedSheet);
             state.sheetData = data;
             showToast('Contacts loaded successfully', 'success');
         } catch (error) {
@@ -549,13 +726,13 @@ function setupEventListeners() {
             return;
         }
         
-        if (!state.spreadsheetId || !state.selectedSheet) {
-            showToast('Please select a spreadsheet and sheet first', 'warning');
+        if (!state.selectedExcelFile || !state.selectedSheet) {
+            showToast('Please select an Excel file and sheet first', 'warning');
             return;
         }
         
         try {
-            const contact = await api.fetchContactByLine(state.spreadsheetId, state.selectedSheet, lineNumber);
+            const contact = await api.fetchContactByLine(state.selectedExcelFile, state.selectedSheet, lineNumber);
             state.currentContact = contact;
             populateContactDetails(contact);
             showSection(elements.contactInfoSection);
@@ -574,13 +751,13 @@ function setupEventListeners() {
             return;
         }
         
-        if (!state.spreadsheetId || !state.selectedSheet) {
-            showToast('Please select a spreadsheet and sheet first', 'warning');
+        if (!state.selectedExcelFile || !state.selectedSheet) {
+            showToast('Please select an Excel file and sheet first', 'warning');
             return;
         }
         
         try {
-            const contact = await api.fetchContactByName(state.spreadsheetId, state.selectedSheet, name);
+            const contact = await api.fetchContactByName(state.selectedExcelFile, state.selectedSheet, name);
             state.currentContact = contact;
             populateContactDetails(contact);
             showSection(elements.contactInfoSection);
@@ -611,6 +788,9 @@ function setupEventListeners() {
             elements.emailContent.value = emailData.emailContent || '';
             
             state.emailContent = emailData.emailContent;
+            
+            // Update the visual preview
+            updateEmailPreview();
             
             // Show email preview section
             showSection(elements.emailPreviewSection);
@@ -698,14 +878,24 @@ function setupEventListeners() {
         showSection(elements.contactInfoSection);
     });
     
-    // Load templates on page load
+    // Update preview as user types in email fields
+    elements.emailSubject.addEventListener('input', updateEmailPreview);
+    elements.emailContent.addEventListener('input', updateEmailPreview);
+    
+    // Load templates and Excel files on page load
     window.addEventListener('load', async () => {
         try {
+            // Load templates
             const templates = await api.fetchTemplates();
             state.templates = templates;
             populateTemplatesList(templates);
+            
+            // Load Excel files
+            const files = await api.fetchExcelFiles();
+            state.excelFiles = files;
+            populateExcelSelect(files);
         } catch (error) {
-            console.error('Error loading templates:', error);
+            console.error('Error loading initial data:', error);
         }
     });
 }
