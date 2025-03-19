@@ -153,9 +153,16 @@ const api = {
                 data.data.forEach(company => {
                     if (company.contacts && Array.isArray(company.contacts)) {
                         company.contacts.forEach(contact => {
-                            // Assuming the name is in column E (index 4)
+                            // Add English name (usually in Name column)
                             if (contact['Name'] && !names.includes(contact['Name'])) {
                                 names.push(contact['Name']);
+                            }
+                            
+                            // Add Hebrew name (usually in column F)
+                            // We'll check for Hebrew name in common column names
+                            const hebrewName = contact['Hebrew Name'] || contact['שם'] || contact['F'] || contact['שם בעברית'];
+                            if (hebrewName && !names.includes(hebrewName)) {
+                                names.push(hebrewName);
                             }
                         });
                     }
@@ -390,6 +397,15 @@ function populateContactDetails(contact) {
         const detailItem = document.createElement('div');
         detailItem.className = 'detail-item';
         
+        // Add specific classes based on field type
+        if (key.toLowerCase().includes('email')) {
+            detailItem.classList.add('email-field');
+        } else if (key.toLowerCase().includes('phone') || key.toLowerCase().includes('mobile')) {
+            detailItem.classList.add('phone-field');
+        } else if (key.toLowerCase().includes('company')) {
+            detailItem.classList.add('company-field');
+        }
+        
         const label = document.createElement('div');
         label.className = 'label';
         label.textContent = key;
@@ -400,6 +416,7 @@ function populateContactDetails(contact) {
         // Check if the value is empty or not
         if (value) {
             valueElement.classList.add('has-data');
+            detailItem.classList.add('has-data');
             
             // Check if the value is an email
             if (key.toLowerCase().includes('email') && isValidEmail(value)) {
@@ -429,6 +446,7 @@ function populateContactDetails(contact) {
             }
         } else {
             valueElement.textContent = 'N/A';
+            detailItem.classList.add('no-data');
         }
         
         detailItem.appendChild(label);
@@ -645,6 +663,27 @@ function toggleDirection() {
     
     // Update preview direction
     elements.previewContent.setAttribute('dir', newDir);
+    
+    // If switching to RTL and we have a contact with a Hebrew name, use it in the greeting
+    if (newDir === 'rtl' && state.currentContact) {
+        const hebrewName = state.currentContact['Hebrew Name'] || 
+                          state.currentContact['שם'] || 
+                          state.currentContact['F'] || 
+                          state.currentContact['שם בעברית'];
+        
+        if (hebrewName) {
+            // Replace the English name with Hebrew name in the email content
+            const englishName = state.currentContact['Name'] || '';
+            if (englishName && elements.emailContent.value.includes(englishName)) {
+                elements.emailContent.value = elements.emailContent.value.replace(
+                    new RegExp(englishName, 'g'), 
+                    hebrewName
+                );
+                // Update the preview
+                updateEmailPreview();
+            }
+        }
+    }
     
     showToast(`Text direction changed to ${newDir.toUpperCase()}`, 'info');
 }

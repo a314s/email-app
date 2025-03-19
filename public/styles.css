@@ -188,6 +188,11 @@ input:focus, select:focus, textarea:focus {
 /* Template Section */
 .template-upload {
     margin-bottom: 15px;
+    border-left: 4px solid var(--primary-color);
+    padding-left: 15px;
+    background-color: rgba(74, 111, 165, 0.05);
+    padding: 15px;
+    border-radius: 0 4px 4px 0;
 }
 
 .template-upload input[type="file"] {
@@ -196,12 +201,17 @@ input:focus, select:focus, textarea:focus {
 
 .template-list {
     margin-top: 15px;
+    border-left: 4px solid var(--warning-color);
+    padding-left: 15px;
+    background-color: rgba(255, 193, 7, 0.05);
+    padding: 15px;
+    border-radius: 0 4px 4px 0;
 }
 
 .template-list h4 {
     margin-bottom: 10px;
     font-size: 16px;
-    color: var(--secondary-color);
+    color: var(--warning-color);
 }
 
 .template-list ul {
@@ -221,9 +231,10 @@ input:focus, select:focus, textarea:focus {
 }
 
 .template-list li.selected {
-    background-color: var(--light-color);
+    background-color: rgba(40, 167, 69, 0.1);
     padding: 8px;
     border-radius: 4px;
+    border-left: 3px solid var(--success-color);
 }
 
 .template-list li button {
@@ -287,6 +298,11 @@ input:focus, select:focus, textarea:focus {
 /* Contact Info Section */
 .contact-info-section {
     margin-bottom: 20px;
+    border-left: 4px solid var(--primary-color);
+    padding-left: 15px;
+    background-color: rgba(74, 111, 165, 0.05);
+    padding: 15px;
+    border-radius: 0 4px 4px 0;
 }
 
 .contact-header {
@@ -318,6 +334,11 @@ input:focus, select:focus, textarea:focus {
     padding: 10px;
     background-color: var(--light-color);
     border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+.detail-item:hover {
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
 }
 
 .detail-item .label {
@@ -336,6 +357,43 @@ input:focus, select:focus, textarea:focus {
     font-weight: 500;
 }
 
+/* Add colored borders based on data type */
+.detail-item.has-data {
+    background-color: rgba(255, 255, 255, 0.9);
+    border-left: 3px solid var(--success-color);
+}
+
+.detail-item.no-data {
+    background-color: rgba(240, 240, 240, 0.5);
+    color: #999;
+    border-left: 3px solid var(--secondary-color);
+}
+
+.detail-item.email-field.has-data {
+    border-left-color: #3498db;
+}
+
+.detail-item.phone-field.has-data {
+    border-left-color: #9b59b6;
+}
+
+.detail-item.company-field.has-data {
+    border-left-color: #e74c3c;
+}
+
+/* Add icons for different field types */
+.detail-item.email-field .label::before {
+    content: "✉️ ";
+}
+
+.detail-item.phone-field .label::before {
+    content: "📞 ";
+}
+
+.detail-item.company-field .label::before {
+    content: "🏢 ";
+}
+
 .detail-item .value a {
     color: #3498db;
     text-decoration: none;
@@ -343,6 +401,10 @@ input:focus, select:focus, textarea:focus {
 
 .detail-item .value a:hover {
     text-decoration: underline;
+}
+
+.detail-item.email-field .value.has-data {
+    color: var(--primary-color);
 }
 
 .contact-actions {
@@ -359,6 +421,11 @@ input:focus, select:focus, textarea:focus {
 /* Email Preview Section */
 .email-preview-section {
     margin-bottom: 20px;
+    border-left: 4px solid var(--warning-color);
+    padding-left: 15px;
+    background-color: rgba(255, 193, 7, 0.05);
+    padding: 15px;
+    border-radius: 0 4px 4px 0;
 }
 
 .email-header {
@@ -380,6 +447,14 @@ input:focus, select:focus, textarea:focus {
     min-height: 200px;
     font-size: 14px;
     line-height: 1.6;
+    border: 1px solid var(--border-color);
+    border-left: 3px solid var(--primary-color);
+    transition: all 0.2s ease;
+}
+
+.email-body textarea:focus {
+    border-left-color: var(--success-color);
+    box-shadow: 0 0 0 2px rgba(40, 167, 69, 0.2);
 }
 
 .email-body textarea[dir="rtl"] {
@@ -393,6 +468,7 @@ input:focus, select:focus, textarea:focus {
     margin-bottom: 20px;
     background-color: white;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    border-left: 3px solid var(--warning-color);
 }
 
 .email-preview-header {
