@@ -1,5 +1,5 @@
 const express = require('express');
-const { google } = require('googleapis');
+const XLSX = require('xlsx');
 const fs = require('fs');
 const path = require('path');
 const PizZip = require('pizzip');
@@ -22,62 +22,128 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
 
 // Configure multer for file uploads
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    // Determine the destination folder based on file type
+    let uploadFolder = 'uploads';
+    if (file.fieldname === 'template') {
+      uploadFolder = 'templates';
+    } else if (file.fieldname === 'excelFile') {
+      uploadFolder = 'excel';
+    }
+    
+    // Create the directory if it doesn't exist
+    const dir = path.join(__dirname, uploadFolder);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    
+    cb(null, uploadFolder);
+  },
+  filename: function (req, file, cb) {
+    // Keep the original filename
+    cb(null, file.originalname);
+  }
+});
+
 const upload = multer({
-  dest: 'uploads/',
+  storage: storage,
   limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
 });
 
-// Google Sheets API setup
-async function getAuthClient() {
-  const auth = new google.auth.GoogleAuth({
-    keyFile: process.env.GOOGLE_APPLICATION_CREDENTIALS,
-    scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly']
-  });
-  return auth.getClient();
-}
-
-// Get Google Sheets data
-app.get('/api/sheets/:spreadsheetId', async (req, res) => {
+// Upload Excel file
+app.post('/api/excel/upload', upload.single('excelFile'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ success: false, error: 'No file uploaded' });
+  }
+  
   try {
-    const { spreadsheetId } = req.params;
-    const authClient = await getAuthClient();
-    const sheets = google.sheets({ version: 'v4', auth: authClient });
+    const filePath = path.join(__dirname, req.file.destination, req.file.originalname);
     
-    // Get all sheets in the spreadsheet
-    const sheetList = await sheets.spreadsheets.get({
-      spreadsheetId
+    // Read the Excel file to get sheet names
+    const workbook = XLSX.readFile(filePath);
+    const sheetNames = workbook.SheetNames;
+    
+    res.json({
+      success: true,
+      message: 'Excel file uploaded successfully',
+      filename: req.file.originalname,
+      sheets: sheetNames
     });
+  } catch (error) {
+    console.error('Error processing Excel file:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get list of uploaded Excel files
+app.get('/api/excel/files', (req, res) => {
+  const excelDir = path.join(__dirname, 'excel');
+  
+  // Create excel directory if it doesn't exist
+  if (!fs.existsSync(excelDir)) {
+    fs.mkdirSync(excelDir, { recursive: true });
+    return res.json({ success: true, files: [] });
+  }
+  
+  const files = fs.readdirSync(excelDir)
+    .filter(file => file.endsWith('.xlsx') || file.endsWith('.xls'))
+    .map(file => ({
+      filename: file,
+      path: path.join(excelDir, file)
+    }));
+  
+  res.json({ success: true, files });
+});
+
+// Get sheet names from Excel file
+app.get('/api/excel/:filename/sheets', (req, res) => {
+  try {
+    const { filename } = req.params;
+    const filePath = path.join(__dirname, 'excel', filename);
     
-    const sheetNames = sheetList.data.sheets.map(sheet => sheet.properties.title);
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ success: false, error: 'File not found' });
+    }
+    
+    const workbook = XLSX.readFile(filePath);
+    const sheetNames = workbook.SheetNames;
     
     res.json({ success: true, sheets: sheetNames });
   } catch (error) {
-    console.error('Error fetching sheets:', error);
+    console.error('Error reading Excel file:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
 // Get data from a specific sheet
-app.get('/api/sheets/:spreadsheetId/:sheetName', async (req, res) => {
+app.get('/api/excel/:filename/:sheetName', (req, res) => {
   try {
-    const { spreadsheetId, sheetName } = req.params;
-    const authClient = await getAuthClient();
-    const sheets = google.sheets({ version: 'v4', auth: authClient });
+    const { filename, sheetName } = req.params;
+    const filePath = path.join(__dirname, 'excel', filename);
     
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: sheetName
-    });
-    
-    const rows = response.data.values;
-    
-    if (!rows || rows.length === 0) {
-      return res.status(404).json({ success: false, error: 'No data found' });
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ success: false, error: 'File not found' });
     }
     
+    const workbook = XLSX.readFile(filePath);
+    
+    if (!workbook.SheetNames.includes(sheetName)) {
+      return res.status(404).json({ success: false, error: 'Sheet not found' });
+    }
+    
+    const worksheet = workbook.Sheets[sheetName];
+    const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+    
+    if (jsonData.length === 0) {
+      return res.status(404).json({ success: false, error: 'No data found in sheet' });
+    }
+    
+    // Extract headers (first row)
+    const headers = jsonData[0];
+    
     // Process the data to group by company
-    const headers = rows[0];
-    const data = rows.slice(1).map(row => {
+    const data = jsonData.slice(1).map(row => {
       const rowData = {};
       headers.forEach((header, index) => {
         rowData[header] = row[index] || '';
@@ -127,42 +193,52 @@ app.get('/api/sheets/:spreadsheetId/:sheetName', async (req, res) => {
 });
 
 // Get contact by line number
-app.get('/api/contact/line/:spreadsheetId/:sheetName/:lineNumber', async (req, res) => {
+app.get('/api/contact/line/:filename/:sheetName/:lineNumber', (req, res) => {
   try {
-    const { spreadsheetId, sheetName, lineNumber } = req.params;
+    const { filename, sheetName, lineNumber } = req.params;
     const line = parseInt(lineNumber);
     
     if (isNaN(line) || line < 2) { // Line 1 is headers, so contacts start at line 2
       return res.status(400).json({ success: false, error: 'Invalid line number' });
     }
     
-    const authClient = await getAuthClient();
-    const sheets = google.sheets({ version: 'v4', auth: authClient });
+    const filePath = path.join(__dirname, 'excel', filename);
     
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: `${sheetName}!${line}:${line}`
-    });
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ success: false, error: 'File not found' });
+    }
     
-    const row = response.data.values?.[0];
+    const workbook = XLSX.readFile(filePath);
+    
+    if (!workbook.SheetNames.includes(sheetName)) {
+      return res.status(404).json({ success: false, error: 'Sheet not found' });
+    }
+    
+    const worksheet = workbook.Sheets[sheetName];
+    const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+    
+    if (jsonData.length < line) {
+      return res.status(404).json({ success: false, error: 'Line number out of range' });
+    }
+    
+    // Get headers (first row)
+    const headers = jsonData[0];
+    
+    // Get the row at the specified line number
+    const row = jsonData[line - 1]; // -1 because array is 0-indexed
     
     if (!row) {
       return res.status(404).json({ success: false, error: 'No data found at this line' });
     }
-    
-    // Get headers to map column names
-    const headerResponse = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: `${sheetName}!1:1`
-    });
-    
-    const headers = headerResponse.data.values?.[0] || [];
     
     // Map row data to headers
     const contact = {};
     headers.forEach((header, index) => {
       contact[header] = row[index] || '';
     });
+    
+    // Add line number to contact data
+    contact.lineNumber = line;
     
     res.json({ success: true, contact });
   } catch (error) {
@@ -172,28 +248,35 @@ app.get('/api/contact/line/:spreadsheetId/:sheetName/:lineNumber', async (req, r
 });
 
 // Get contact by name
-app.get('/api/contact/name/:spreadsheetId/:sheetName/:name', async (req, res) => {
+app.get('/api/contact/name/:filename/:sheetName/:name', (req, res) => {
   try {
-    const { spreadsheetId, sheetName, name } = req.params;
-    const authClient = await getAuthClient();
-    const sheets = google.sheets({ version: 'v4', auth: authClient });
+    const { filename, sheetName, name } = req.params;
+    const filePath = path.join(__dirname, 'excel', filename);
     
-    // Get all data from the sheet
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: sheetName
-    });
-    
-    const rows = response.data.values;
-    
-    if (!rows || rows.length === 0) {
-      return res.status(404).json({ success: false, error: 'No data found' });
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ success: false, error: 'File not found' });
     }
     
-    const headers = rows[0];
-    const nameColumnIndex = headers.findIndex(header => header.toLowerCase() === 'name');
+    const workbook = XLSX.readFile(filePath);
     
-    if (nameColumnIndex === -1) {
+    if (!workbook.SheetNames.includes(sheetName)) {
+      return res.status(404).json({ success: false, error: 'Sheet not found' });
+    }
+    
+    const worksheet = workbook.Sheets[sheetName];
+    const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+    
+    if (jsonData.length === 0) {
+      return res.status(404).json({ success: false, error: 'No data found in sheet' });
+    }
+    
+    // Get headers (first row)
+    const headers = jsonData[0];
+    
+    // Find the name column (assumed to be column E, which is index 4)
+    const nameColumnIndex = 4; // Column E (0-indexed)
+    
+    if (nameColumnIndex >= headers.length) {
       return res.status(404).json({ success: false, error: 'Name column not found' });
     }
     
@@ -201,11 +284,11 @@ app.get('/api/contact/name/:spreadsheetId/:sheetName/:name', async (req, res) =>
     let contactRow = null;
     let rowIndex = -1;
     
-    for (let i = 1; i < rows.length; i++) {
-      const row = rows[i];
-      if (row[nameColumnIndex] && row[nameColumnIndex].toLowerCase() === name.toLowerCase()) {
+    for (let i = 1; i < jsonData.length; i++) {
+      const row = jsonData[i];
+      if (row[nameColumnIndex] && row[nameColumnIndex].toString().toLowerCase() === name.toLowerCase()) {
         contactRow = row;
-        rowIndex = i + 1; // +1 because Google Sheets is 1-indexed
+        rowIndex = i + 1; // +1 because we want 1-indexed line numbers
         break;
       }
     }
@@ -235,17 +318,6 @@ app.post('/api/template/upload', upload.single('template'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ success: false, error: 'No file uploaded' });
   }
-  
-  const templatePath = path.join(__dirname, 'templates', req.file.originalname);
-  
-  // Ensure templates directory exists
-  if (!fs.existsSync(path.join(__dirname, 'templates'))) {
-    fs.mkdirSync(path.join(__dirname, 'templates'), { recursive: true });
-  }
-  
-  // Move file from uploads to templates directory
-  fs.copyFileSync(req.file.path, templatePath);
-  fs.unlinkSync(req.file.path); // Remove from uploads
   
   res.json({ 
     success: true, 
