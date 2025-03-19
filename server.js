@@ -8,6 +8,8 @@ const nodemailer = require('nodemailer');
 const multer = require('multer');
 const cors = require('cors');
 const dotenv = require('dotenv');
+const mammoth = require('mammoth');
+const axios = require('axios');
 
 // Load environment variables
 dotenv.config();
@@ -280,13 +282,14 @@ app.get('/api/contact/name/:filename/:sheetName/:name', (req, res) => {
       return res.status(404).json({ success: false, error: 'Name column not found' });
     }
     
-    // Find the row with the matching name
+    // Find the row with the matching name - now with partial matching
     let contactRow = null;
     let rowIndex = -1;
+    const searchName = name.toLowerCase();
     
     for (let i = 1; i < jsonData.length; i++) {
       const row = jsonData[i];
-      if (row[nameColumnIndex] && row[nameColumnIndex].toString().toLowerCase() === name.toLowerCase()) {
+      if (row[nameColumnIndex] && row[nameColumnIndex].toString().toLowerCase().includes(searchName)) {
         contactRow = row;
         rowIndex = i + 1; // +1 because we want 1-indexed line numbers
         break;
@@ -346,13 +349,13 @@ app.get('/api/templates', (req, res) => {
   res.json({ success: true, templates });
 });
 
-// Generate email content from template
-app.post('/api/generate-email', (req, res) => {
+// Generate email from template
+app.post('/api/generate-email', async (req, res) => {
   try {
     const { templateName, contactData } = req.body;
     
     if (!templateName || !contactData) {
-      return res.status(400).json({ success: false, error: 'Missing required parameters' });
+      return res.status(400).json({ success: false, error: 'Template name and contact data are required' });
     }
     
     const templatePath = path.join(__dirname, 'templates', templateName);
@@ -361,42 +364,45 @@ app.post('/api/generate-email', (req, res) => {
       return res.status(404).json({ success: false, error: 'Template not found' });
     }
     
-    // Read the template
-    const content = fs.readFileSync(templatePath, 'binary');
-    const zip = new PizZip(content);
+    // Read the template file
+    const content = await mammoth.extractRawText({ path: templatePath });
+    let emailContent = content.value;
     
-    const doc = new Docxtemplater(zip, {
-      paragraphLoop: true,
-      linebreaks: true
-    });
+    // Replace placeholders with contact data
+    for (const [key, value] of Object.entries(contactData)) {
+      const placeholder = `{{${key}}}`;
+      emailContent = emailContent.replace(new RegExp(placeholder, 'g'), value || '');
+    }
     
-    // Set the template data
-    doc.setData(contactData);
+    // Also replace [Name] with the contact's name
+    if (contactData.Name) {
+      emailContent = emailContent.replace(/\[Name\]/g, contactData.Name);
+    }
     
-    // Render the document
-    doc.render();
+    // Extract subject from the first line if it starts with "Subject:"
+    let subject = '';
+    const lines = emailContent.split('\n');
+    if (lines[0].startsWith('Subject:')) {
+      subject = lines[0].substring('Subject:'.length).trim();
+      emailContent = lines.slice(1).join('\n').trim();
+    } else {
+      // Default subject if not specified in template
+      subject = "What can navitech Aid do for you";
+    }
     
-    // Get the rendered content
-    const buffer = doc.getZip().generate({ type: 'nodebuffer' });
-    
-    // Convert to HTML (simplified approach - in a real app, you might want to use a more robust docx-to-html converter)
-    // For this example, we'll just extract the text content
-    const textContent = buffer.toString('utf8').replace(/[^\x20-\x7E]/g, ' ');
-    
-    res.json({ 
-      success: true, 
-      emailContent: textContent,
-      subject: `Information for ${contactData.Name || 'you'}`,
-      to: contactData.Email || ''
+    res.json({
+      success: true,
+      emailContent,
+      subject
     });
   } catch (error) {
     console.error('Error generating email:', error);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ success: false, error: 'Failed to generate email' });
   }
 });
 
 // Send email
-app.post('/api/send-email', (req, res) => {
+app.post('/api/send-email', async (req, res) => {
   try {
     const { to, subject, content, from } = req.body;
     
@@ -404,7 +410,7 @@ app.post('/api/send-email', (req, res) => {
       return res.status(400).json({ success: false, error: 'Missing required parameters' });
     }
     
-    // Configure email transport
+    // Configure transporter
     const transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST,
       port: process.env.SMTP_PORT,
@@ -416,49 +422,103 @@ app.post('/api/send-email', (req, res) => {
     });
     
     // Send email
-    transporter.sendMail({
-      from: from || process.env.DEFAULT_FROM_EMAIL,
+    await transporter.sendMail({
+      from: from || process.env.SMTP_USER,
       to,
       subject,
-      html: content
-    }, (error, info) => {
-      if (error) {
-        console.error('Error sending email:', error);
-        return res.status(500).json({ success: false, error: error.message });
-      }
-      
-      res.json({ 
-        success: true, 
-        message: 'Email sent successfully',
-        messageId: info.messageId
-      });
+      text: content
     });
+    
+    res.json({ success: true, message: 'Email sent successfully' });
   } catch (error) {
-    console.error('Error in send-email endpoint:', error);
+    console.error('Error sending email:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// Open in Outlook
-app.post('/api/open-outlook', (req, res) => {
+// Improve email content using Anthropic API
+app.post('/api/improve-email', async (req, res) => {
   try {
-    const { to, subject, body } = req.body;
+    const { content, contactData } = req.body;
     
-    if (!to) {
-      return res.status(400).json({ success: false, error: 'Recipient email is required' });
+    if (!content) {
+      return res.status(400).json({ success: false, error: 'Email content is required' });
     }
     
-    // Generate mailto URL
-    const mailtoUrl = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject || '')}&body=${encodeURIComponent(body || '')}`;
+    // Check if Anthropic API key is available
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      return res.status(400).json({ success: false, error: 'Anthropic API key is not configured' });
+    }
     
-    res.json({ 
-      success: true, 
-      mailtoUrl,
-      message: 'Use this URL to open in Outlook'
-    });
+    // Prepare contact information for context
+    let contactContext = '';
+    if (contactData) {
+      contactContext = 'Contact Information:\n';
+      for (const [key, value] of Object.entries(contactData)) {
+        if (value && typeof value === 'string' && value.trim() !== '') {
+          contactContext += `${key}: ${value}\n`;
+        }
+      }
+    }
+    
+    // Prepare the prompt for Anthropic
+    const prompt = `
+You are an expert email writer for a company called Navitech Aid. I need you to improve the following email content.
+Make it more professional, industry-specific, and persuasive, but maintain the same general tone and intent.
+Do not add any new information that isn't implied in the original email.
+Do not change any factual information.
+Focus on improving the language, structure, and persuasiveness.
+
+${contactContext}
+
+Original Email:
+${content}
+
+Improved Email:
+`;
+
+    try {
+      // Call Anthropic API
+      const response = await axios.post(
+        'https://api.anthropic.com/v1/messages',
+        {
+          model: 'claude-3-sonnet-20240229',
+          max_tokens: 4000,
+          messages: [
+            {
+              role: 'user',
+              content: prompt
+            }
+          ]
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01'
+          }
+        }
+      );
+      
+      // Extract the improved content from the response
+      const improvedContent = response.data.content[0].text;
+      
+      res.json({
+        success: true,
+        improvedContent
+      });
+    } catch (apiError) {
+      console.error('Error calling Anthropic API:', apiError.response?.data || apiError.message);
+      return res.status(500).json({ 
+        success: false, 
+        error: 'Failed to improve email content',
+        details: apiError.response?.data || apiError.message
+      });
+    }
   } catch (error) {
-    console.error('Error generating mailto URL:', error);
-    res.status(500).json({ success: false, error: error.message });
+    console.error('Error improving email content:', error);
+    res.status(500).json({ success: false, error: 'Failed to improve email content' });
   }
 });
 

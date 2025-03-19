@@ -41,6 +41,9 @@ const elements = {
     previewTo: document.getElementById('previewTo'),
     previewSubject: document.getElementById('previewSubject'),
     previewContent: document.getElementById('previewContent'),
+    toggleRTL: document.getElementById('toggleRTL'),
+    increaseFontSize: document.getElementById('increaseFontSize'),
+    decreaseFontSize: document.getElementById('decreaseFontSize'),
     sendEmail: document.getElementById('sendEmail'),
     openInOutlook: document.getElementById('openInOutlook'),
     backToContact: document.getElementById('backToContact'),
@@ -64,7 +67,8 @@ const state = {
     currentContact: null,
     templates: [],
     selectedTemplate: '',
-    emailContent: ''
+    emailContent: '',
+    contactNames: [] // Add this to store contact names for autocomplete
 };
 
 // API Functions
@@ -141,6 +145,22 @@ const api = {
             
             if (!data.success) {
                 throw new Error(data.error || 'Failed to fetch sheet data');
+            }
+            
+            // Extract all contact names for autocomplete
+            if (data.data && Array.isArray(data.data)) {
+                const names = [];
+                data.data.forEach(company => {
+                    if (company.contacts && Array.isArray(company.contacts)) {
+                        company.contacts.forEach(contact => {
+                            // Assuming the name is in column E (index 4)
+                            if (contact['Name'] && !names.includes(contact['Name'])) {
+                                names.push(contact['Name']);
+                            }
+                        });
+                    }
+                });
+                state.contactNames = names;
             }
             
             return data;
@@ -261,6 +281,32 @@ const api = {
         }
     },
     
+    async improveEmailContent(content, contactData) {
+        showLoading(true);
+        try {
+            const response = await fetch('/api/improve-email', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ content, contactData })
+            });
+            
+            const data = await response.json();
+            
+            if (!data.success) {
+                throw new Error(data.error || 'Failed to improve email content');
+            }
+            
+            return data.improvedContent;
+        } catch (error) {
+            showToast(error.message, 'error');
+            throw error;
+        } finally {
+            showLoading(false);
+        }
+    },
+    
     async sendEmail(to, subject, content, from) {
         showLoading(true);
         try {
@@ -288,29 +334,13 @@ const api = {
     },
     
     async getOutlookUrl(to, subject, body) {
-        showLoading(true);
-        try {
-            const response = await fetch('/api/open-outlook', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ to, subject, body })
-            });
-            
-            const data = await response.json();
-            
-            if (!data.success) {
-                throw new Error(data.error || 'Failed to generate Outlook URL');
-            }
-            
-            return data.mailtoUrl;
-        } catch (error) {
-            showToast(error.message, 'error');
-            throw error;
-        } finally {
-            showLoading(false);
-        }
+        // Format the body for mailto URL
+        const formattedBody = body.replace(/\n/g, '%0D%0A');
+        
+        // Create the mailto URL
+        const mailtoUrl = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(formattedBody)}`;
+        
+        return { success: true, mailtoUrl };
     }
 };
 
@@ -601,6 +631,131 @@ function updateEmailPreview() {
     elements.previewContent.innerHTML = content;
 }
 
+// Toggle RTL/LTR direction
+function toggleDirection() {
+    const currentDir = elements.emailContent.getAttribute('dir');
+    const newDir = currentDir === 'ltr' ? 'rtl' : 'ltr';
+    
+    // Update textarea direction
+    elements.emailContent.setAttribute('dir', newDir);
+    
+    // Update preview direction
+    elements.previewContent.setAttribute('dir', newDir);
+    
+    showToast(`Text direction changed to ${newDir.toUpperCase()}`, 'info');
+}
+
+// Change font size
+function changeFontSize(increase = true) {
+    const textarea = elements.emailContent;
+    const preview = elements.previewContent;
+    
+    // Get current font size
+    const currentSize = parseInt(window.getComputedStyle(textarea).fontSize);
+    
+    // Calculate new size (min: 10px, max: 24px)
+    let newSize;
+    if (increase) {
+        newSize = Math.min(currentSize + 1, 24);
+    } else {
+        newSize = Math.max(currentSize - 1, 10);
+    }
+    
+    // Apply new size
+    textarea.style.fontSize = `${newSize}px`;
+    preview.style.fontSize = `${newSize}px`;
+}
+
+// Setup autocomplete for contact name search
+function setupContactNameAutocomplete() {
+    const input = elements.contactName;
+    let currentFocus;
+    
+    // Execute when someone writes in the text field
+    input.addEventListener("input", function(e) {
+        let a, b, i, val = this.value;
+        // Close any already open lists
+        closeAllLists();
+        if (!val) { return false; }
+        currentFocus = -1;
+        
+        // Create a DIV element that will contain the autocomplete items
+        a = document.createElement("DIV");
+        a.setAttribute("id", this.id + "autocomplete-list");
+        a.setAttribute("class", "autocomplete-items");
+        this.parentNode.appendChild(a);
+        
+        // For each item in the array
+        for (i = 0; i < state.contactNames.length; i++) {
+            // Check if the item starts with the same letters as the text field value
+            if (state.contactNames[i].substr(0, val.length).toUpperCase() == val.toUpperCase()) {
+                // Create a DIV element for each matching element
+                b = document.createElement("DIV");
+                // Make the matching letters bold
+                b.innerHTML = "<strong>" + state.contactNames[i].substr(0, val.length) + "</strong>";
+                b.innerHTML += state.contactNames[i].substr(val.length);
+                // Insert a input field that will hold the current array item's value
+                b.innerHTML += "<input type='hidden' value='" + state.contactNames[i] + "'>";
+                
+                // Execute a function when someone clicks on the item value
+                b.addEventListener("click", function(e) {
+                    // Insert the value for the autocomplete text field
+                    input.value = this.getElementsByTagName("input")[0].value;
+                    // Close the list of autocompleted values
+                    closeAllLists();
+                });
+                a.appendChild(b);
+            }
+        }
+    });
+    
+    // Execute a function when pressing a key on the keyboard
+    input.addEventListener("keydown", function(e) {
+        let x = document.getElementById(this.id + "autocomplete-list");
+        if (x) x = x.getElementsByTagName("div");
+        if (e.keyCode == 40) { // DOWN key
+            currentFocus++;
+            addActive(x);
+        } else if (e.keyCode == 38) { // UP key
+            currentFocus--;
+            addActive(x);
+        } else if (e.keyCode == 13) { // ENTER key
+            e.preventDefault();
+            if (currentFocus > -1) {
+                if (x) x[currentFocus].click();
+            }
+        }
+    });
+    
+    function addActive(x) {
+        if (!x) return false;
+        removeActive(x);
+        if (currentFocus >= x.length) currentFocus = 0;
+        if (currentFocus < 0) currentFocus = (x.length - 1);
+        x[currentFocus].classList.add("autocomplete-active");
+    }
+    
+    function removeActive(x) {
+        for (let i = 0; i < x.length; i++) {
+            x[i].classList.remove("autocomplete-active");
+        }
+    }
+    
+    function closeAllLists(elmnt) {
+        const x = document.getElementsByClassName("autocomplete-items");
+        for (let i = 0; i < x.length; i++) {
+            if (elmnt != x[i] && elmnt != input) {
+                x[i].parentNode.removeChild(x[i]);
+            }
+        }
+    }
+    
+    // Close all lists when clicking elsewhere
+    document.addEventListener("click", function (e) {
+        closeAllLists(e.target);
+    });
+}
+
 // Event Handlers
 function setupEventListeners() {
     // Upload Excel Button
@@ -783,8 +938,15 @@ function setupEventListeners() {
             const emailData = await api.generateEmail(state.selectedTemplate, state.currentContact);
             
             // Populate email preview
-            elements.emailTo.value = state.currentContact.Email || '';
-            elements.emailSubject.value = emailData.subject || '';
+            // Check for email in different possible field names
+            const emailAddress = state.currentContact.Email || 
+                                state.currentContact.email || 
+                                state.currentContact['E-mail'] || 
+                                state.currentContact['Email Address'] || 
+                                '';
+            
+            elements.emailTo.value = emailAddress;
+            elements.emailSubject.value = emailData.subject || "What can navitech Aid do for you";
             elements.emailContent.value = emailData.emailContent || '';
             
             state.emailContent = emailData.emailContent;
@@ -862,12 +1024,20 @@ function setupEventListeners() {
         }
         
         try {
-            const mailtoUrl = await api.getOutlookUrl(to, subject, body);
-            window.location.href = mailtoUrl;
+            const { mailtoUrl } = await api.getOutlookUrl(to, subject, body);
+            window.open(mailtoUrl, '_blank');
         } catch (error) {
             console.error('Error opening Outlook:', error);
+            showToast('Failed to open email client', 'error');
         }
     });
+    
+    // Toggle RTL/LTR button
+    elements.toggleRTL.addEventListener('click', toggleDirection);
+    
+    // Font size buttons
+    elements.increaseFontSize.addEventListener('click', () => changeFontSize(true));
+    elements.decreaseFontSize.addEventListener('click', () => changeFontSize(false));
     
     // Back Buttons
     elements.backToContact.addEventListener('click', () => {
@@ -879,31 +1049,56 @@ function setupEventListeners() {
     });
     
     // Update preview as user types in email fields
+    elements.emailTo.addEventListener('input', updateEmailPreview);
     elements.emailSubject.addEventListener('input', updateEmailPreview);
     elements.emailContent.addEventListener('input', updateEmailPreview);
     
-    // Load templates and Excel files on page load
-    window.addEventListener('load', async () => {
+    // Add a button to improve email content using Anthropic API
+    const improveEmailBtn = document.createElement('button');
+    improveEmailBtn.id = 'improveEmail';
+    improveEmailBtn.className = 'btn secondary';
+    improveEmailBtn.innerHTML = '<i class="fas fa-magic"></i> Improve Email';
+    improveEmailBtn.addEventListener('click', async () => {
+        const content = elements.emailContent.value.trim();
+        
+        if (!content) {
+            showToast('Email content is required', 'warning');
+            return;
+        }
+        
         try {
-            // Load templates
-            const templates = await api.fetchTemplates();
-            state.templates = templates;
-            populateTemplatesList(templates);
-            
-            // Load Excel files
-            const files = await api.fetchExcelFiles();
-            state.excelFiles = files;
-            populateExcelSelect(files);
+            const improvedContent = await api.improveEmailContent(content, state.currentContact);
+            elements.emailContent.value = improvedContent;
+            updateEmailPreview();
+            showToast('Email content improved', 'success');
         } catch (error) {
-            console.error('Error loading initial data:', error);
+            console.error('Error improving email content:', error);
+            showToast('Failed to improve email content', 'error');
         }
     });
+    
+    // Insert the improve email button after the textarea controls
+    const textareaControls = document.querySelector('.textarea-controls');
+    textareaControls.appendChild(improveEmailBtn);
 }
 
 // Initialize the app
 function init() {
     setupEventListeners();
-    showSection(elements.contactInfoSection);
+    setupContactNameAutocomplete();
+    api.fetchExcelFiles()
+        .then(files => {
+            state.excelFiles = files;
+            populateExcelSelect(files);
+        })
+        .catch(error => console.error('Error fetching Excel files:', error));
+    
+    api.fetchTemplates()
+        .then(templates => {
+            state.templates = templates;
+            populateTemplatesList(templates);
+        })
+        .catch(error => console.error('Error fetching templates:', error));
 }
 
 // Start the app

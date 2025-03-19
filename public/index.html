@@ -111,7 +111,7 @@
                     <div class="email-header">
                         <div class="form-group">
                             <label for="emailTo">To:</label>
-                            <input type="email" id="emailTo" readonly>
+                            <input type="email" id="emailTo">
                         </div>
                         <div class="form-group">
                             <label for="emailSubject">Subject:</label>
@@ -121,7 +121,12 @@
                     
                     <div class="email-body">
                         <label for="emailContent">Content:</label>
-                        <textarea id="emailContent" rows="10"></textarea>
+                        <div class="textarea-controls">
+                            <button type="button" id="toggleRTL" class="btn tertiary btn-small"><i class="fas fa-exchange-alt"></i> Toggle RTL/LTR</button>
+                            <button type="button" id="increaseFontSize" class="btn tertiary btn-small"><i class="fas fa-plus"></i> Font Size</button>
+                            <button type="button" id="decreaseFontSize" class="btn tertiary btn-small"><i class="fas fa-minus"></i> Font Size</button>
+                        </div>
+                        <textarea id="emailContent" rows="10" dir="ltr"></textarea>
                     </div>
                     
                     <div class="email-preview">
@@ -135,7 +140,7 @@
                                 <span id="previewSubject"></span>
                             </div>
                         </div>
-                        <div class="email-preview-content" id="previewContent"></div>
+                        <div class="email-preview-content" id="previewContent" dir="ltr"></div>
                     </div>
                     
                     <div class="email-actions">
