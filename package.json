@@ -8,6 +8,7 @@
     "dev": "nodemon server.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
     "axios": "^1.6.2",
     "cors": "^2.8.5",
     "docxtemplater": "^3.37.12",

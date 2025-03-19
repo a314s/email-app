@@ -9,7 +9,7 @@ const multer = require('multer');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const mammoth = require('mammoth');
-const axios = require('axios');
+const { Anthropic } = require('@anthropic-ai/sdk');
 
 // Load environment variables
 dotenv.config();
@@ -462,10 +462,18 @@ app.post('/api/improve-email', async (req, res) => {
       }
     }
     
-    // Prepare the prompt for Anthropic
-    const prompt = `
-You are an expert email writer for a company called Navitech Aid. I need you to improve the following email content.
-Make it more professional, industry-specific, and persuasive, but maintain the same general tone and intent.
+    console.log('Calling Anthropic API with key:', apiKey.substring(0, 5) + '...');
+    
+    try {
+      // Initialize the Anthropic client
+      const anthropic = new Anthropic({
+        apiKey: apiKey,
+      });
+      
+      // Prepare the user message
+      const userMessage = `You are an expert email writer for a company called Navitech Aid. I need you to improve the following email content.
+Make it more professional, industry-specific, and persuasive, but maintain the same general tone and intent while keeping it concise and to the point.
+Make sure the output is the same language as the original email.
 Do not add any new information that isn't implied in the original email.
 Do not change any factual information.
 Focus on improving the language, structure, and persuasiveness.
@@ -475,45 +483,37 @@ ${contactContext}
 Original Email:
 ${content}
 
-Improved Email:
-`;
+Improved Email:`;
 
-    try {
-      // Call Anthropic API
-      const response = await axios.post(
-        'https://api.anthropic.com/v1/messages',
-        {
-          model: 'claude-3-sonnet-20240229',
-          max_tokens: 4000,
-          messages: [
-            {
-              role: 'user',
-              content: prompt
-            }
-          ]
-        },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': apiKey,
-            'anthropic-version': '2023-06-01'
+      console.log('Sending message to Anthropic...');
+      
+      // Call Anthropic API with the latest format
+      const response = await anthropic.messages.create({
+        model: "claude-3-7-sonnet-20250219",
+        messages: [
+          {
+            role: "user", 
+            content: userMessage
           }
-        }
-      );
+        ],
+        max_tokens: 4000
+      });
+      
+      console.log('Anthropic API response received');
       
       // Extract the improved content from the response
-      const improvedContent = response.data.content[0].text;
+      const improvedContent = response.content[0].text;
       
       res.json({
         success: true,
         improvedContent
       });
     } catch (apiError) {
-      console.error('Error calling Anthropic API:', apiError.response?.data || apiError.message);
+      console.error('Error calling Anthropic API:', apiError);
       return res.status(500).json({ 
         success: false, 
         error: 'Failed to improve email content',
-        details: apiError.response?.data || apiError.message
+        details: apiError.message
       });
     }
   } catch (error) {

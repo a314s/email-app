@@ -284,6 +284,8 @@ const api = {
     async improveEmailContent(content, contactData) {
         showLoading(true);
         try {
+            console.log('Improving email content with contact data:', contactData);
+            
             const response = await fetch('/api/improve-email', {
                 method: 'POST',
                 headers: {
@@ -293,6 +295,7 @@ const api = {
             });
             
             const data = await response.json();
+            console.log('API response:', data);
             
             if (!data.success) {
                 throw new Error(data.error || 'Failed to improve email content');
@@ -300,6 +303,7 @@ const api = {
             
             return data.improvedContent;
         } catch (error) {
+            console.error('Error in improveEmailContent:', error);
             showToast(error.message, 'error');
             throw error;
         } finally {
