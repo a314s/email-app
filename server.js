@@ -10,6 +10,7 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const mammoth = require('mammoth');
 const { Anthropic } = require('@anthropic-ai/sdk');
+const database = require('./database');
 
 // Load environment variables
 dotenv.config();
@@ -405,31 +406,45 @@ app.post('/api/generate-email', async (req, res) => {
 app.post('/api/send-email', async (req, res) => {
   try {
     const { to, subject, content, from } = req.body;
+    const contactData = req.body.contactData || {};
     
     if (!to || !subject || !content) {
       return res.status(400).json({ success: false, error: 'Missing required parameters' });
     }
     
-    // Configure transporter
+    // Create a transporter
     const transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: process.env.SMTP_PORT,
-      secure: process.env.SMTP_SECURE === 'true',
+      host: 'smtp.gmail.com',
+      port: 587,
+      secure: false,
       auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS
+        user: from || process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASSWORD
       }
     });
     
-    // Send email
-    await transporter.sendMail({
-      from: from || process.env.SMTP_USER,
+    // Send the email
+    const info = await transporter.sendMail({
+      from: from || process.env.EMAIL_USER,
       to,
       subject,
-      text: content
+      html: content
     });
     
-    res.json({ success: true, message: 'Email sent successfully' });
+    // Record the email in the database
+    const emailId = await database.recordEmail({
+      recipient: to,
+      subject,
+      content,
+      contactData
+    });
+    
+    res.json({ 
+      success: true, 
+      message: 'Email sent successfully',
+      emailId,
+      messageId: info.messageId
+    });
   } catch (error) {
     console.error('Error sending email:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -522,8 +537,344 @@ Improved Email:`;
   }
 });
 
+// Update Excel sheet with new data
+app.post('/api/excel/update', (req, res) => {
+  try {
+    const { filename, sheetName, formData } = req.body;
+    
+    if (!filename || !sheetName || !formData) {
+      return res.status(400).json({ success: false, error: 'Missing required parameters' });
+    }
+    
+    const filePath = path.join(__dirname, 'excel', filename);
+    
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ success: false, error: 'File not found' });
+    }
+    
+    // Read the Excel file
+    const workbook = XLSX.readFile(filePath);
+    
+    if (!workbook.SheetNames.includes(sheetName)) {
+      return res.status(404).json({ success: false, error: 'Sheet not found' });
+    }
+    
+    const worksheet = workbook.Sheets[sheetName];
+    const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+    
+    if (jsonData.length === 0) {
+      return res.status(404).json({ success: false, error: 'No data found in sheet' });
+    }
+    
+    // Get headers (first row)
+    const headers = jsonData[0];
+    
+    // Create a new row with the form data
+    const newRow = [];
+    headers.forEach(header => {
+      newRow.push(formData[header] || '');
+    });
+    
+    // Add the new row to the data
+    jsonData.push(newRow);
+    
+    // Convert back to worksheet
+    const newWorksheet = XLSX.utils.aoa_to_sheet(jsonData);
+    
+    // Update the workbook
+    workbook.Sheets[sheetName] = newWorksheet;
+    
+    // Write the updated workbook back to the file
+    XLSX.writeFile(workbook, filePath);
+    
+    res.json({ 
+      success: true, 
+      message: 'Data added successfully',
+      rowNumber: jsonData.length
+    });
+  } catch (error) {
+    console.error('Error updating Excel file:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Calendar and Follow-up API Endpoints
+
+// Record a sent email
+app.post('/api/emails/record', (req, res) => {
+  try {
+    const { recipient, subject, content, contactData } = req.body;
+    
+    if (!recipient || !subject || !content) {
+      return res.status(400).json({ success: false, error: 'Missing required fields' });
+    }
+    
+    // First, record the email
+    database.recordEmail({ recipient, subject, content, contactData })
+      .then(emailId => {
+        // Then, check if we have follow-up data from Excel
+        if (contactData && contactData.excelFile && contactData.sheetName) {
+          database.importFollowUpDataFromExcel(contactData.excelFile, contactData.sheetName, contactData)
+            .then(followUpData => {
+              if (followUpData) {
+                // Update the email with Excel follow-up data
+                database.updateEmailWithExcelData(emailId, followUpData)
+                  .then(() => {
+                    res.json({ success: true, emailId });
+                  })
+                  .catch(error => {
+                    console.error('Error updating email with Excel data:', error);
+                    // Still return success as the email was recorded
+                    res.json({ success: true, emailId, warning: 'Email recorded but Excel data not updated' });
+                  });
+              } else {
+                res.json({ success: true, emailId });
+              }
+            })
+            .catch(error => {
+              console.error('Error importing follow-up data from Excel:', error);
+              // Still return success as the email was recorded
+              res.json({ success: true, emailId, warning: 'Email recorded but Excel data not imported' });
+            });
+        } else {
+          res.json({ success: true, emailId });
+        }
+      })
+      .catch(error => {
+        console.error('Error recording email:', error);
+        res.status(500).json({ success: false, error: error.message });
+      });
+  } catch (error) {
+    console.error('Error recording email:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get all sent emails
+app.get('/api/emails', (req, res) => {
+  database.getSentEmails()
+    .then(emails => {
+      res.json({ success: true, emails });
+    })
+    .catch(error => {
+      console.error('Error fetching emails:', error);
+      res.status(500).json({ success: false, error: error.message });
+    });
+});
+
+// Get emails by date
+app.get('/api/emails/date/:date', (req, res) => {
+  try {
+    const { date } = req.params;
+    const dateObj = new Date(date);
+    
+    if (isNaN(dateObj.getTime())) {
+      return res.status(400).json({ success: false, error: 'Invalid date format' });
+    }
+    
+    database.getEmailsByDate(dateObj)
+      .then(emails => {
+        res.json({ success: true, emails });
+      })
+      .catch(error => {
+        console.error('Error fetching emails by date:', error);
+        res.status(500).json({ success: false, error: error.message });
+      });
+  } catch (error) {
+    console.error('Error fetching emails by date:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get all pending follow-ups
+app.get('/api/follow-ups', (req, res) => {
+  database.getPendingFollowUps()
+    .then(followUps => {
+      res.json({ success: true, followUps });
+    })
+    .catch(error => {
+      console.error('Error fetching follow-ups:', error);
+      res.status(500).json({ success: false, error: error.message });
+    });
+});
+
+// Get follow-ups by date
+app.get('/api/follow-ups/date/:date', (req, res) => {
+  try {
+    const { date } = req.params;
+    const dateObj = new Date(date);
+    
+    if (isNaN(dateObj.getTime())) {
+      return res.status(400).json({ success: false, error: 'Invalid date format' });
+    }
+    
+    database.getFollowUpsByDate(dateObj)
+      .then(followUps => {
+        res.json({ success: true, followUps });
+      })
+      .catch(error => {
+        console.error('Error fetching follow-ups by date:', error);
+        res.status(500).json({ success: false, error: error.message });
+      });
+  } catch (error) {
+    console.error('Error fetching follow-ups by date:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Complete a follow-up
+app.post('/api/follow-ups/:id/complete', (req, res) => {
+  try {
+    const { id } = req.params;
+    const { notes } = req.body;
+    
+    database.completeFollowUp(id, notes)
+      .then(result => {
+        res.json({ 
+          success: true, 
+          message: 'Follow-up completed successfully',
+          ...result
+        });
+      })
+      .catch(error => {
+        console.error('Error completing follow-up:', error);
+        res.status(500).json({ success: false, error: error.message });
+      });
+  } catch (error) {
+    console.error('Error completing follow-up:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get calendar data for a month
+app.get('/api/calendar/:year/:month', (req, res) => {
+  try {
+    const { year, month } = req.params;
+    const yearNum = parseInt(year);
+    const monthNum = parseInt(month);
+    
+    if (isNaN(yearNum) || isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
+      return res.status(400).json({ success: false, error: 'Invalid year or month' });
+    }
+    
+    database.getCalendarData(yearNum, monthNum)
+      .then(result => {
+        res.json(result);
+      })
+      .catch(error => {
+        console.error('Error fetching calendar data:', error);
+        res.status(500).json({ success: false, error: error.message });
+      });
+  } catch (error) {
+    console.error('Error fetching calendar data:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get calendar data for a specific company
+app.get('/api/calendar/company/:year/:month/:company', (req, res) => {
+  try {
+    const { year, month, company } = req.params;
+    const yearNum = parseInt(year);
+    const monthNum = parseInt(month);
+    
+    if (isNaN(yearNum) || isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
+      return res.status(400).json({ success: false, error: 'Invalid year or month' });
+    }
+    
+    if (!company) {
+      return res.status(400).json({ success: false, error: 'Company name is required' });
+    }
+    
+    database.getCompanyCalendarData(yearNum, monthNum, company)
+      .then(result => {
+        res.json(result);
+      })
+      .catch(error => {
+        console.error('Error fetching company calendar data:', error);
+        res.status(500).json({ success: false, error: error.message });
+      });
+  } catch (error) {
+    console.error('Error fetching company calendar data:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get all companies
+app.get('/api/companies', (req, res) => {
+  try {
+    database.getAllCompanies()
+      .then(companies => {
+        res.json({ success: true, companies });
+      })
+      .catch(error => {
+        console.error('Error fetching companies:', error);
+        res.status(500).json({ success: false, error: error.message });
+      });
+  } catch (error) {
+    console.error('Error fetching companies:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get a list of all companies
+app.get('/api/companies', (req, res) => {
+  database.getAllCompanies()
+    .then(companies => {
+      res.json({ success: true, companies });
+    })
+    .catch(error => {
+      console.error('Error fetching companies:', error);
+      res.status(500).json({ success: false, error: 'Failed to fetch companies' });
+    });
+});
+
+// Get calendar data for a specific company
+app.get('/api/calendar/company/:year/:month/:company', (req, res) => {
+  const year = parseInt(req.params.year);
+  const month = parseInt(req.params.month);
+  const company = req.params.company;
+  
+  if (isNaN(year) || isNaN(month) || !company) {
+    return res.status(400).json({ success: false, error: 'Invalid parameters' });
+  }
+  
+  database.getCalendarDataForCompany(year, month, company)
+    .then(calendarData => {
+      res.json({ success: true, calendarData });
+    })
+    .catch(error => {
+      console.error('Error fetching calendar data for company:', error);
+      res.status(500).json({ success: false, error: 'Failed to fetch calendar data' });
+    });
+});
+
+// Complete a follow-up
+app.post('/api/follow-ups/:id/complete', (req, res) => {
+  const followUpId = req.params.id;
+  const notes = req.body.notes || '';
+  
+  database.completeFollowUp(followUpId, notes)
+    .then(result => {
+      res.json({ success: true, message: 'Follow-up completed successfully' });
+    })
+    .catch(error => {
+      console.error('Error completing follow-up:', error);
+      res.status(500).json({ success: false, error: 'Failed to complete follow-up' });
+    });
+});
+
 // Start the server
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Open http://localhost:${PORT} in your browser`);
+  
+  // Initialize the database
+  database.initializeDatabase()
+    .then(() => {
+      console.log('Database initialized');
+    })
+    .catch(err => {
+      console.error('Error initializing database:', err);
+    });
 });

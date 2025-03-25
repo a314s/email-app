@@ -9,6 +9,17 @@
 </head>
 <body>
     <div class="app-container">
+        <div class="top-bar">
+            <div class="logo">
+                <img src="logo.png" alt="Email Automation App">
+                <h1>Email Automation App</h1>
+            </div>
+            <div class="top-actions">
+                <button id="calendarViewBtn" class="btn btn-primary"><i class="fas fa-calendar-alt"></i> Calendar</button>
+                <button id="companyCalendarBtn" class="btn btn-primary"><i class="fas fa-building"></i> Company Calendar</button>
+                <button id="settingsBtn" class="btn btn-secondary"><i class="fas fa-cog"></i> Settings</button>
+            </div>
+        </div>
         <header>
             <h1><i class="fas fa-envelope"></i> Email Automation App</h1>
         </header>
@@ -99,6 +110,7 @@
                         <div class="contact-actions">
                             <button id="generateEmail" class="btn primary" disabled><i class="fas fa-envelope"></i> Generate Email</button>
                             <button id="viewAllData" class="btn secondary"><i class="fas fa-table"></i> View All Data</button>
+                            <button id="calendarViewBtn" class="btn secondary"><i class="fas fa-calendar-alt"></i> Calendar View</button>
                         </div>
                     </div>
                     <div id="noContactFound" class="hidden">
@@ -163,6 +175,104 @@
                         </table>
                     </div>
                     <button id="backFromTable" class="btn tertiary"><i class="fas fa-arrow-left"></i> Back</button>
+                </div>
+                
+                <div class="data-entry-section hidden" id="dataEntrySection">
+                    <h3>Add New Data</h3>
+                    <div class="form-container">
+                        <form id="dataEntryForm">
+                            <div class="form-fields" id="dynamicFormFields">
+                                <!-- Form fields will be dynamically generated based on Excel headers -->
+                            </div>
+                            <div class="form-actions">
+                                <button type="submit" id="submitForm" class="btn primary"><i class="fas fa-save"></i> Submit</button>
+                                <button type="button" id="cancelForm" class="btn tertiary"><i class="fas fa-times"></i> Cancel</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+                
+                <!-- Calendar View Section -->
+                <section id="calendarSection" class="section hidden">
+                    <div class="section-header">
+                        <h2>Calendar View</h2>
+                        <button id="backFromCalendar" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> Back</button>
+                    </div>
+                    
+                    <div class="calendar-controls">
+                        <div class="calendar-navigation">
+                            <button id="prevMonth" class="btn btn-outline-secondary"><i class="fas fa-chevron-left"></i></button>
+                            <h3 id="currentMonthYear">March 2025</h3>
+                            <button id="nextMonth" class="btn btn-outline-secondary"><i class="fas fa-chevron-right"></i></button>
+                            <button id="todayBtn" class="btn btn-outline-primary">Today</button>
+                        </div>
+                        
+                        <div class="company-filter">
+                            <label for="companyFilter">Filter by Company:</label>
+                            <select id="companyFilter" class="form-control">
+                                <option value="">All Companies</option>
+                                <!-- Companies will be populated dynamically -->
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="calendar-container">
+                        <div class="calendar-header">
+                            <div>Sunday</div>
+                            <div>Monday</div>
+                            <div>Tuesday</div>
+                            <div>Wednesday</div>
+                            <div>Thursday</div>
+                            <div>Friday</div>
+                            <div>Saturday</div>
+                        </div>
+                        <div id="calendarGrid" class="calendar-grid">
+                            <!-- Calendar days will be populated dynamically -->
+                        </div>
+                    </div>
+                    
+                    <div class="follow-ups-container">
+                        <h3>Follow-up Reminders</h3>
+                        <div id="followUpsList" class="follow-ups-list">
+                            <!-- Follow-ups will be populated dynamically -->
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Email Details Modal -->
+                <div id="emailDetailsModal" class="modal">
+                    <div class="modal-content">
+                        <span class="close-modal">&times;</span>
+                        <h3>Email Details</h3>
+                        <div id="emailDetailsContent">
+                            <!-- Email details will be populated dynamically -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Follow-up Details Modal -->
+                <div id="followUpDetailsModal" class="modal">
+                    <div class="modal-content">
+                        <span class="close-modal">&times;</span>
+                        <h3>Follow-up Details</h3>
+                        <div id="followUpDetailsContent">
+                            <!-- Follow-up details will be populated dynamically -->
+                        </div>
+                        <div class="modal-actions">
+                            <button id="completeFollowUpBtn" class="btn btn-success">Mark as Completed</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Excel Follow-up Details Modal -->
+                <div id="excelFollowUpDetailsModal" class="modal">
+                    <div class="modal-content">
+                        <span class="close-modal">&times;</span>
+                        <h3>Excel Follow-up Details</h3>
+                        <div id="excelFollowUpDetailsContent">
+                            <!-- Excel follow-up details will be populated dynamically -->
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

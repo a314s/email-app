@@ -4,51 +4,52 @@ echo Starting Email Automation App Server...
 echo ===================================================
 echo.
 
-:: Check if .env file exists
-if not exist .env (
-    echo WARNING: .env file not found.
-    echo.
-    echo You need to create a .env file with your API keys.
-    echo Example:
-    echo   PORT=3000
-    echo   ANTHROPIC_API_KEY=your_api_key_here
-    echo.
-    echo Would you like to create a basic .env file now? (Y/N)
-    set /p CREATE_ENV=
-    
-    if /i "%CREATE_ENV%"=="Y" (
-        echo PORT=3000 > .env
-        echo ANTHROPIC_API_KEY=your_api_key_here >> .env
-        echo.
-        echo Basic .env file created. Please edit it with your actual API keys.
-        echo.
-        pause
-    )
+
+:: Check if node.js is installed
+where node >nul 2>nul
+if %ERRORLEVEL% neq 0 (
+    echo Node.js is not installed. Please install Node.js from https://nodejs.org/
+    pause
+    exit /b 1
+)
+
+:: Check if npm is installed
+where npm >nul 2>nul
+if %ERRORLEVEL% neq 0 (
+    echo npm is not installed. Please install Node.js from https://nodejs.org/
+    pause
+    exit /b 1
+)
+
+:: Check if package.json exists
+if not exist "package.json" (
+    echo package.json not found. Please run install.bat first.
+    pause
+    exit /b 1
 )
 
 :: Check if node_modules exists
-if not exist node_modules (
-    echo WARNING: node_modules directory not found.
-    echo You need to install dependencies first.
-    echo.
-    echo Would you like to run the installation now? (Y/N)
-    set /p INSTALL=
-    
-    if /i "%INSTALL%"=="Y" (
-        call install.bat
-    ) else (
-        echo.
-        echo Please run install.bat before starting the server.
+if not exist "node_modules" (
+    echo node_modules not found. Running npm install...
+    npm install
+    if %ERRORLEVEL% neq 0 (
+        echo Failed to install dependencies. Please run install.bat.
         pause
         exit /b 1
     )
 )
 
-:: Start the server
-echo Starting server...
-echo.
-echo Press Ctrl+C to stop the server.
-echo.
-call npm start
+:: Create data directory if it doesn't exist
+if not exist "data" (
+    mkdir data
+    echo Created data directory
+)
 
+:: Start the server with debugging
+echo Starting server with debugging enabled...
+cd /d "%~dp0"
+node --trace-warnings server.js
+
+:: If we get here, the server has stopped
+echo Server has stopped. Press any key to exit.
 pause

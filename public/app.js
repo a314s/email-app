@@ -53,9 +53,29 @@ const elements = {
     contactsTable: document.getElementById('contactsTable'),
     backFromTable: document.getElementById('backFromTable'),
     
+    // Data Entry Form
+    dataEntrySection: document.getElementById('dataEntrySection'),
+    dataEntryForm: document.getElementById('dataEntryForm'),
+    dynamicFormFields: document.getElementById('dynamicFormFields'),
+    submitForm: document.getElementById('submitForm'),
+    cancelForm: document.getElementById('cancelForm'),
+    
     // UI Elements
     toast: document.getElementById('toast'),
-    loadingOverlay: document.getElementById('loadingOverlay')
+    loadingOverlay: document.getElementById('loadingOverlay'),
+    
+    // Calendar View
+    calendarViewBtn: document.getElementById('calendarViewBtn'),
+    companyCalendarBtn: document.getElementById('companyCalendarBtn'),
+    calendarSection: document.getElementById('calendarSection'),
+    backFromCalendar: document.getElementById('backFromCalendar'),
+    prevMonth: document.getElementById('prevMonth'),
+    nextMonth: document.getElementById('nextMonth'),
+    todayBtn: document.getElementById('todayBtn'),
+    calendarGrid: document.getElementById('calendarGrid'),
+    followUpsList: document.getElementById('followUpsList'),
+    currentMonthYear: document.getElementById('currentMonthYear'),
+    companyFilter: document.getElementById('companyFilter')
 };
 
 // App State
@@ -68,7 +88,16 @@ const state = {
     templates: [],
     selectedTemplate: '',
     emailContent: '',
-    contactNames: [] // Add this to store contact names for autocomplete
+    contactNames: [], // Add this to store contact names for autocomplete
+    currentYear: new Date().getFullYear(),
+    currentMonth: new Date().getMonth() + 1,
+    selectedCompany: '',
+    modals: {
+        emailDetails: null,
+        followUpDetails: null,
+        excelFollowUpDetails: null
+    },
+    currentFollowUp: null
 };
 
 // API Functions
@@ -352,6 +381,100 @@ const api = {
         const mailtoUrl = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(formattedBody)}`;
         
         return { success: true, mailtoUrl };
+    },
+    
+    async updateExcelData(filename, sheetName, formData) {
+        showLoading(true);
+        try {
+            const response = await fetch('/api/excel/update', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    filename,
+                    sheetName,
+                    formData
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (!data.success) {
+                throw new Error(data.error || 'Failed to update Excel data');
+            }
+            
+            return data;
+        } catch (error) {
+            showToast(error.message, 'error');
+            throw error;
+        } finally {
+            showLoading(false);
+        }
+    },
+    
+    async fetchCalendar(year, month) {
+        showLoading(true);
+        try {
+            const response = await fetch(`/api/calendar/${year}/${month}`);
+            const data = await response.json();
+            
+            if (!data.success) {
+                throw new Error(data.error || 'Failed to fetch calendar data');
+            }
+            
+            return data.calendarData;
+        } catch (error) {
+            showToast(error.message, 'error');
+            throw error;
+        } finally {
+            showLoading(false);
+        }
+    },
+    
+    async completeFollowUp(followUpId, notes) {
+        showLoading(true);
+        try {
+            const response = await fetch(`/api/follow-ups/${followUpId}/complete`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ notes })
+            });
+            
+            const data = await response.json();
+            
+            if (!data.success) {
+                throw new Error(data.error || 'Failed to complete follow-up');
+            }
+            
+            return data;
+        } catch (error) {
+            showToast(error.message, 'error');
+            throw error;
+        } finally {
+            showLoading(false);
+        }
+    },
+    
+    async fetchFollowUps() {
+        showLoading(true);
+        try {
+            const response = await fetch('/api/follow-ups');
+            const data = await response.json();
+            
+            if (!data.success) {
+                throw new Error(data.error || 'Failed to fetch follow-ups');
+            }
+            
+            return data.followUps;
+        } catch (error) {
+            showToast(error.message, 'error');
+            throw error;
+        } finally {
+            showLoading(false);
+        }
     }
 };
 
@@ -376,6 +499,8 @@ function showSection(section) {
     elements.contactInfoSection.classList.add('hidden');
     elements.emailPreviewSection.classList.add('hidden');
     elements.dataTableSection.classList.add('hidden');
+    elements.dataEntrySection.classList.add('hidden');
+    elements.calendarSection.classList.add('hidden');
     
     // Show the requested section
     section.classList.remove('hidden');
@@ -460,6 +585,20 @@ function populateContactDetails(contact) {
     
     // Enable generate email button if templates are available
     elements.generateEmail.disabled = state.templates.length === 0;
+    
+    // Add "Add New Data" button to contact actions
+    const contactActions = document.querySelector('.contact-actions');
+    if (contactActions) {
+        // Check if the button already exists
+        if (!document.getElementById('addNewData')) {
+            const addNewDataBtn = document.createElement('button');
+            addNewDataBtn.id = 'addNewData';
+            addNewDataBtn.className = 'btn secondary';
+            addNewDataBtn.innerHTML = '<i class="fas fa-plus"></i> Add New Data';
+            addNewDataBtn.addEventListener('click', showDataEntryForm);
+            contactActions.appendChild(addNewDataBtn);
+        }
+    }
 }
 
 function showContactNotFound() {
@@ -799,8 +938,96 @@ function setupContactNameAutocomplete() {
     });
 }
 
+// Populate the dynamic form fields based on Excel headers
+function generateFormFields(headers) {
+    elements.dynamicFormFields.innerHTML = '';
+    
+    headers.forEach(header => {
+        if (header) { // Skip empty headers
+            const formGroup = document.createElement('div');
+            formGroup.className = 'form-group';
+            
+            const label = document.createElement('label');
+            label.setAttribute('for', `form-${header}`);
+            label.textContent = header;
+            
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.id = `form-${header}`;
+            input.name = header;
+            input.placeholder = `Enter ${header}`;
+            
+            formGroup.appendChild(label);
+            formGroup.appendChild(input);
+            elements.dynamicFormFields.appendChild(formGroup);
+        }
+    });
+}
+
+// Show the data entry form
+function showDataEntryForm() {
+    if (!state.selectedExcelFile || !state.selectedSheet) {
+        showToast('Please select an Excel file and sheet first', 'warning');
+        return;
+    }
+    
+    if (!state.sheetData || !state.sheetData.headers) {
+        showToast('Please load contacts first to get sheet structure', 'warning');
+        return;
+    }
+    
+    // Generate form fields based on headers
+    generateFormFields(state.sheetData.headers);
+    
+    // Show the form section
+    showSection(elements.dataEntrySection);
+}
+
+// Handle form submission
+function handleFormSubmit(event) {
+    event.preventDefault();
+    
+    if (!state.selectedExcelFile || !state.selectedSheet) {
+        showToast('Please select an Excel file and sheet first', 'warning');
+        return;
+    }
+    
+    // Collect form data
+    const formData = {};
+    const formElements = elements.dataEntryForm.elements;
+    
+    for (let i = 0; i < formElements.length; i++) {
+        const element = formElements[i];
+        if (element.name && element.name !== '') {
+            formData[element.name] = element.value;
+        }
+    }
+    
+    // Submit the form data
+    api.updateExcelData(state.selectedExcelFile, state.selectedSheet, formData)
+        .then(result => {
+            showToast('Data added successfully', 'success');
+            
+            // Reset form
+            elements.dataEntryForm.reset();
+            
+            // Refresh the data
+            return api.fetchSheetData(state.selectedExcelFile, state.selectedSheet);
+        })
+        .then(data => {
+            state.sheetData = data;
+            showToast('Data refreshed successfully', 'success');
+            
+            // Go back to contact info section
+            showSection(elements.contactInfoSection);
+        })
+        .catch(error => {
+            console.error('Error submitting form:', error);
+        });
+}
+
 // Event Handlers
-function setupEventListeners() {
+document.addEventListener('DOMContentLoaded', function() {
     // Upload Excel Button
     elements.uploadExcel.addEventListener('click', async () => {
         const file = elements.excelFile.files[0];
@@ -1123,11 +1350,59 @@ function setupEventListeners() {
     // Insert the improve email button after the textarea controls
     const textareaControls = document.querySelector('.textarea-controls');
     textareaControls.appendChild(improveEmailBtn);
-}
+    
+    // Cancel Form Button
+    elements.cancelForm.addEventListener('click', () => {
+        elements.dataEntryForm.reset();
+        showSection(elements.contactInfoSection);
+    });
+    
+    // Form Submit
+    elements.dataEntryForm.addEventListener('submit', handleFormSubmit);
+    
+    // Calendar View Button
+    elements.calendarViewBtn.addEventListener('click', () => {
+        showSection(elements.calendarSection);
+        renderCalendar(new Date().getFullYear(), new Date().getMonth() + 1);
+        loadPendingFollowUps();
+    });
+    
+    // Company Calendar Button
+    elements.companyCalendarBtn.addEventListener('click', showCompanyCalendarView);
+    
+    // Back from Calendar Button
+    elements.backFromCalendar.addEventListener('click', () => {
+        showSection(elements.contactInfoSection);
+    });
+    
+    // Previous Month Button
+    elements.prevMonth.addEventListener('click', () => {
+        const currentDate = new Date(elements.currentMonthYear.textContent);
+        currentDate.setMonth(currentDate.getMonth() - 1);
+        renderCalendar(currentDate.getFullYear(), currentDate.getMonth() + 1);
+    });
+    
+    // Next Month Button
+    elements.nextMonth.addEventListener('click', () => {
+        const currentDate = new Date(elements.currentMonthYear.textContent);
+        currentDate.setMonth(currentDate.getMonth() + 1);
+        renderCalendar(currentDate.getFullYear(), currentDate.getMonth() + 1);
+    });
+    
+    // Today Button
+    elements.todayBtn.addEventListener('click', () => {
+        renderCalendar(new Date().getFullYear(), new Date().getMonth() + 1);
+    });
+    
+    // Company Filter
+    elements.companyFilter.addEventListener('change', function() {
+        state.selectedCompany = this.value;
+        renderCalendar(state.currentYear, state.currentMonth);
+    });
+});
 
 // Initialize the app
 function init() {
-    setupEventListeners();
     setupContactNameAutocomplete();
     api.fetchExcelFiles()
         .then(files => {
@@ -1142,7 +1417,477 @@ function init() {
             populateTemplatesList(templates);
         })
         .catch(error => console.error('Error fetching templates:', error));
+    
+    // Load companies for the filter
+    loadCompanies();
 }
 
 // Start the app
 init();
+
+// Calendar View Functionality
+let currentDate = new Date();
+let selectedDate = null;
+
+// Render the calendar for a specific month
+function renderCalendar(year, month) {
+    // Update the month/year display
+    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 
+                        'July', 'August', 'September', 'October', 'November', 'December'];
+    elements.currentMonthYear.textContent = `${monthNames[month-1]} ${year}`;
+    
+    // Get calendar data from the server
+    api.fetchCalendar(year, month)
+        .then(data => {
+            if (data.success) {
+                // Generate calendar grid
+                generateCalendarGrid(year, month, data.calendarData);
+            } else {
+                console.error('Error fetching calendar data:', data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching calendar data:', error);
+        });
+}
+
+// Generate the calendar grid
+function generateCalendarGrid(year, month, calendarData) {
+    elements.calendarGrid.innerHTML = '';
+    
+    // Get the first day of the month (0 = Sunday, 1 = Monday, etc.)
+    const firstDay = new Date(year, month - 1, 1).getDay();
+    
+    // Get the number of days in the month
+    const daysInMonth = new Date(year, month, 0).getDate();
+    
+    // Get the number of days in the previous month
+    const daysInPrevMonth = new Date(year, month - 1, 0).getDate();
+    
+    // Get today's date for highlighting
+    const today = new Date();
+    const isCurrentMonth = today.getFullYear() === year && today.getMonth() === month - 1;
+    
+    // Calculate the number of rows needed (maximum 6)
+    const rows = Math.ceil((firstDay + daysInMonth) / 7);
+    
+    // Generate days from previous month
+    for (let i = 0; i < firstDay; i++) {
+        const day = daysInPrevMonth - firstDay + i + 1;
+        const dayElement = createDayElement(day, 'other-month', {});
+        elements.calendarGrid.appendChild(dayElement);
+    }
+    
+    // Generate days of the current month
+    for (let day = 1; day <= daysInMonth; day++) {
+        const isToday = isCurrentMonth && today.getDate() === day;
+        const dayData = calendarData[day] || { emails: [], followUps: [] };
+        
+        const dayElement = createDayElement(day, isToday ? 'today' : '', dayData);
+        elements.calendarGrid.appendChild(dayElement);
+    }
+    
+    // Calculate the remaining cells to fill the grid
+    const remainingCells = rows * 7 - (firstDay + daysInMonth);
+    
+    // Generate days from next month
+    for (let day = 1; day <= remainingCells; day++) {
+        const dayElement = createDayElement(day, 'other-month', {});
+        elements.calendarGrid.appendChild(dayElement);
+    }
+}
+
+// Create a day element for the calendar
+function createDayElement(day, className, dayData) {
+    const dayElement = document.createElement('div');
+    dayElement.className = `calendar-day ${className}`;
+    
+    // Add day number
+    const dayNumber = document.createElement('div');
+    dayNumber.className = 'day-number';
+    dayNumber.textContent = day;
+    dayElement.appendChild(dayNumber);
+    
+    // Add events container
+    const eventsContainer = document.createElement('div');
+    eventsContainer.className = 'day-events';
+    
+    // Add emails
+    if (dayData.emails && dayData.emails.length > 0) {
+        dayData.emails.forEach(email => {
+            const emailElement = document.createElement('div');
+            emailElement.classList.add('day-email');
+            emailElement.textContent = `Email: ${email.recipient.split('@')[0]}`;
+            emailElement.dataset.id = email.id;
+            emailElement.dataset.type = 'email';
+            emailElement.addEventListener('click', () => showEmailDetails(email));
+            eventsContainer.appendChild(emailElement);
+        });
+    }
+    
+    // Add follow-ups
+    if (dayData.followUps && dayData.followUps.length > 0) {
+        dayData.followUps.forEach(followUp => {
+            const followUpElement = document.createElement('div');
+            followUpElement.classList.add('day-follow-up');
+            followUpElement.textContent = `Follow-up #${followUp.follow_up_number}: ${followUp.recipient.split('@')[0]}`;
+            followUpElement.dataset.id = followUp.id;
+            followUpElement.dataset.type = 'followUp';
+            followUpElement.addEventListener('click', () => showFollowUpDetails(followUp));
+            eventsContainer.appendChild(followUpElement);
+            
+            // Also add to the follow-ups list if it's pending
+            if (followUp.status === 'pending') {
+                addFollowUpToList(followUp);
+            }
+        });
+    }
+    
+    // Add Excel follow-ups
+    if (dayData.excelFollowUps && dayData.excelFollowUps.length > 0) {
+        dayData.excelFollowUps.forEach(excelFollowUp => {
+            const excelElement = document.createElement('div');
+            excelElement.classList.add('day-excel-follow-up');
+            excelElement.textContent = `Excel #${excelFollowUp.followUpNumber}: ${excelFollowUp.contact_name || excelFollowUp.recipient.split('@')[0]}`;
+            excelElement.dataset.id = excelFollowUp.id;
+            excelElement.dataset.type = 'excelFollowUp';
+            excelElement.addEventListener('click', () => showExcelFollowUpDetails(excelFollowUp));
+            eventsContainer.appendChild(excelElement);
+        });
+    }
+    
+    dayElement.appendChild(eventsContainer);
+    
+    return dayElement;
+}
+
+// Load companies for the filter
+function loadCompanies() {
+    fetch('/api/companies')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const companyFilter = elements.companyFilter;
+                // Clear existing options except the first one (All Companies)
+                while (companyFilter.options.length > 1) {
+                    companyFilter.remove(1);
+                }
+                
+                // Add companies to the filter
+                data.companies.forEach(company => {
+                    const option = document.createElement('option');
+                    option.value = company;
+                    option.textContent = company;
+                    companyFilter.appendChild(option);
+                });
+            }
+        })
+        .catch(error => {
+            console.error('Error loading companies:', error);
+            showToast('Failed to load companies', 'error');
+        });
+}
+
+// Update the follow-ups list
+function updateFollowUpsList() {
+    // Fetch pending follow-ups
+    fetch('/api/follow-ups')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                elements.followUpsList.innerHTML = '';
+                
+                if (data.followUps.length === 0) {
+                    elements.followUpsList.innerHTML = '<div class="no-follow-ups">No pending follow-ups</div>';
+                    return;
+                }
+                
+                // Filter by company if selected
+                let followUps = data.followUps;
+                if (state.selectedCompany) {
+                    followUps = followUps.filter(followUp => followUp.company === state.selectedCompany);
+                }
+                
+                // Sort by date
+                followUps.sort((a, b) => new Date(a.follow_up_date) - new Date(b.follow_up_date));
+                
+                // Add to the list
+                followUps.forEach(followUp => {
+                    addFollowUpToList(followUp);
+                });
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching follow-ups:', error);
+            showToast('Failed to load follow-ups', 'error');
+        });
+}
+
+// Add a follow-up to the list
+function addFollowUpToList(followUp) {
+    const followUpItem = document.createElement('div');
+    followUpItem.classList.add('follow-up-item');
+    
+    // Format the date
+    const followUpDate = new Date(followUp.follow_up_date);
+    const formattedDate = followUpDate.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+    });
+    
+    followUpItem.innerHTML = `
+        <div class="follow-up-info">
+            <div><strong>${followUp.recipient}</strong></div>
+            <div>${followUp.subject}</div>
+            <div>Follow-up #${followUp.follow_up_number} - ${formattedDate}</div>
+        </div>
+        <div class="follow-up-actions">
+            <button class="btn btn-sm btn-success complete-btn">Complete</button>
+        </div>
+    `;
+    
+    // Add click event to show details
+    followUpItem.addEventListener('click', (e) => {
+        if (!e.target.classList.contains('complete-btn')) {
+            showFollowUpDetails(followUp);
+        }
+    });
+    
+    // Add click event to complete button
+    const completeBtn = followUpItem.querySelector('.complete-btn');
+    completeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        completeFollowUp(followUp.id);
+    });
+    
+    elements.followUpsList.appendChild(followUpItem);
+}
+
+// Complete a follow-up
+function completeFollowUp(followUpId) {
+    fetch(`/api/follow-ups/${followUpId}/complete`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ notes: 'Completed from calendar view' })
+    })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showToast('Follow-up marked as completed', 'success');
+                // Refresh the calendar
+                renderCalendar(state.currentYear, state.currentMonth);
+            } else {
+                showToast(`Failed to complete follow-up: ${data.error}`, 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error completing follow-up:', error);
+            showToast('Failed to complete follow-up', 'error');
+        });
+}
+
+// Show email details in a modal
+function showEmailDetails(email) {
+    const modal = document.getElementById('emailDetailsModal');
+    const content = document.getElementById('emailDetailsContent');
+    
+    // Format the date
+    const sentDate = new Date(email.sent_date);
+    const formattedDate = sentDate.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+    
+    content.innerHTML = `
+        <div class="detail-row">
+            <div class="detail-label">Recipient:</div>
+            <div class="detail-value">${email.recipient}</div>
+        </div>
+        <div class="detail-row">
+            <div class="detail-label">Subject:</div>
+            <div class="detail-value">${email.subject}</div>
+        </div>
+        <div class="detail-row">
+            <div class="detail-label">Sent Date:</div>
+            <div class="detail-value">${formattedDate}</div>
+        </div>
+        <div class="detail-row">
+            <div class="detail-label">Company:</div>
+            <div class="detail-value">${email.company || 'N/A'}</div>
+        </div>
+        <div class="detail-row">
+            <div class="detail-label">Contact:</div>
+            <div class="detail-value">${email.contact_name || 'N/A'}</div>
+        </div>
+        <hr>
+        <div class="detail-row">
+            <div class="detail-value">${email.content}</div>
+        </div>
+    `;
+    
+    // Show the modal
+    modal.style.display = 'block';
+    
+    // Close modal when clicking the X
+    modal.querySelector('.close-modal').addEventListener('click', () => {
+        modal.style.display = 'none';
+    });
+    
+    // Close modal when clicking outside
+    window.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.style.display = 'none';
+        }
+    });
+}
+
+// Show follow-up details in a modal
+function showFollowUpDetails(followUp) {
+    const modal = document.getElementById('followUpDetailsModal');
+    const content = document.getElementById('followUpDetailsContent');
+    
+    // Store the current follow-up for the complete button
+    state.currentFollowUp = followUp;
+    
+    // Format the date
+    const followUpDate = new Date(followUp.follow_up_date);
+    const formattedDate = followUpDate.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+    });
+    
+    content.innerHTML = `
+        <div class="detail-row">
+            <div class="detail-label">Recipient:</div>
+            <div class="detail-value">${followUp.recipient}</div>
+        </div>
+        <div class="detail-row">
+            <div class="detail-label">Subject:</div>
+            <div class="detail-value">${followUp.subject}</div>
+        </div>
+        <div class="detail-row">
+            <div class="detail-label">Follow-up Date:</div>
+            <div class="detail-value">${formattedDate}</div>
+        </div>
+        <div class="detail-row">
+            <div class="detail-label">Follow-up #:</div>
+            <div class="detail-value">${followUp.follow_up_number}</div>
+        </div>
+        <div class="detail-row">
+            <div class="detail-label">Status:</div>
+            <div class="detail-value">${followUp.status}</div>
+        </div>
+        <div class="detail-row">
+            <div class="detail-label">Company:</div>
+            <div class="detail-value">${followUp.company || 'N/A'}</div>
+        </div>
+        <div class="detail-row">
+            <div class="detail-label">Contact:</div>
+            <div class="detail-value">${followUp.contact_name || 'N/A'}</div>
+        </div>
+    `;
+    
+    // Show the modal
+    modal.style.display = 'block';
+    
+    // Close modal when clicking the X
+    modal.querySelector('.close-modal').addEventListener('click', () => {
+        modal.style.display = 'none';
+    });
+    
+    // Close modal when clicking outside
+    window.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.style.display = 'none';
+        }
+    });
+    
+    // Complete button event
+    document.getElementById('completeFollowUpBtn').addEventListener('click', () => {
+        completeFollowUp(followUp.id);
+        modal.style.display = 'none';
+    });
+}
+
+// Show Excel follow-up details in a modal
+function showExcelFollowUpDetails(excelFollowUp) {
+    const modal = document.getElementById('excelFollowUpDetailsModal');
+    const content = document.getElementById('excelFollowUpDetailsContent');
+    
+    // Format the date
+    const followUpDate = new Date(excelFollowUp.followUpDate);
+    const formattedDate = followUpDate.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+    });
+    
+    content.innerHTML = `
+        <div class="detail-row">
+            <div class="detail-label">Contact:</div>
+            <div class="detail-value">${excelFollowUp.contact_name || 'N/A'}</div>
+        </div>
+        <div class="detail-row">
+            <div class="detail-label">Company:</div>
+            <div class="detail-value">${excelFollowUp.company || 'N/A'}</div>
+        </div>
+        <div class="detail-row">
+            <div class="detail-label">Email #:</div>
+            <div class="detail-value">${excelFollowUp.followUpNumber}</div>
+        </div>
+        <div class="detail-row">
+            <div class="detail-label">Date:</div>
+            <div class="detail-value">${formattedDate}</div>
+        </div>
+        <div class="detail-row">
+            <div class="detail-label">Status:</div>
+            <div class="detail-value">${excelFollowUp.status || 'N/A'}</div>
+        </div>
+        <div class="detail-row">
+            <div class="detail-label">Excel File:</div>
+            <div class="detail-value">${excelFollowUp.excel_file || 'N/A'}</div>
+        </div>
+    `;
+    
+    // Show the modal
+    modal.style.display = 'block';
+    
+    // Close modal when clicking the X
+    modal.querySelector('.close-modal').addEventListener('click', () => {
+        modal.style.display = 'none';
+    });
+    
+    // Close modal when clicking outside
+    window.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.style.display = 'none';
+        }
+    });
+}
+
+// Show company calendar view
+function showCompanyCalendarView() {
+    hideAllSections();
+    elements.calendarSection.classList.remove('hidden');
+    
+    // Load companies for the filter
+    loadCompanies();
+    
+    // Show company filter dropdown and prompt user to select
+    elements.companyFilter.value = '';
+    const companyFilterContainer = document.querySelector('.company-filter');
+    companyFilterContainer.style.display = 'flex';
+    
+    // Render the current month
+    renderCalendar(state.currentYear, state.currentMonth);
+    
+    // Show a toast message to guide the user
+    showToast('Please select a company from the dropdown to view its calendar', 'info');
+}
