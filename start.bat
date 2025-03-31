@@ -1,4 +1,5 @@
 @echo off
+setlocal enabledelayedexpansion
 echo ===================================================
 echo Starting Email Automation App Server...
 echo ===================================================
@@ -44,6 +45,19 @@ if not exist "data" (
     mkdir data
     echo Created data directory
 )
+
+:: Kill any process using port 3000
+echo Checking for processes using port 3000...
+for /f "tokens=5" %%a in ('netstat -aon ^| find ":3000" ^| find "LISTENING"') do (
+    echo Found process using port 3000. Attempting to kill process %%a...
+    taskkill /F /PID %%a >nul 2>nul
+    if !ERRORLEVEL! equ 0 (
+        echo Successfully killed process %%a
+    ) else (
+        echo No process found using port 3000
+    )
+)
+timeout /t 2 >nul
 
 :: Start the server with debugging
 echo Starting server with debugging enabled...

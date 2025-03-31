@@ -75,7 +75,15 @@ const elements = {
     calendarGrid: document.getElementById('calendarGrid'),
     followUpsList: document.getElementById('followUpsList'),
     currentMonthYear: document.getElementById('currentMonthYear'),
-    companyFilter: document.getElementById('companyFilter')
+    companyFilter: document.getElementById('companyFilter'),
+    settingsBtn: document.getElementById('settingsBtn')
+};
+
+// Settings state
+state.settings = {
+    emailSignature: localStorage.getItem('emailSignature') || '',
+    defaultFromEmail: localStorage.getItem('defaultFromEmail') || '',
+    defaultEmailMethod: localStorage.getItem('defaultEmailMethod') || 'direct'
 };
 
 // App State
@@ -416,14 +424,21 @@ const api = {
     async fetchCalendar(year, month) {
         showLoading(true);
         try {
-            const response = await fetch(`/api/calendar/${year}/${month}`);
+            let url = `/api/calendar/${year}/${month}`;
+            
+            // If a company is selected, use the company-specific endpoint
+            if (state.selectedCompany) {
+                url = `/api/calendar/${year}/${month}/${encodeURIComponent(state.selectedCompany)}`;
+            }
+            
+            const response = await fetch(url);
             const data = await response.json();
             
             if (!data.success) {
                 throw new Error(data.error || 'Failed to fetch calendar data');
             }
             
-            return data.calendarData;
+            return data;
         } catch (error) {
             showToast(error.message, 'error');
             throw error;
@@ -1217,7 +1232,13 @@ document.addEventListener('DOMContentLoaded', function() {
             
             elements.emailTo.value = emailAddress;
             elements.emailSubject.value = emailData.subject || "What can navitech Aid do for you";
-            elements.emailContent.value = emailData.emailContent || '';
+            
+            // Add signature to email content if it exists
+            let content = emailData.emailContent || '';
+            if (state.settings.emailSignature) {
+                content += '\n\n' + state.settings.emailSignature;
+            }
+            elements.emailContent.value = content;
             
             state.emailContent = emailData.emailContent;
             
@@ -1369,6 +1390,49 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Company Calendar Button
     elements.companyCalendarBtn.addEventListener('click', showCompanyCalendarView);
+
+    // Settings Button
+    elements.settingsBtn.addEventListener('click', () => {
+        const modal = document.getElementById('settingsModal');
+        modal.style.display = 'block';
+
+        // Load current settings
+        document.getElementById('defaultFromEmail').value = state.settings.defaultFromEmail;
+        document.getElementById('defaultEmailMethod').value = state.settings.defaultEmailMethod;
+        document.getElementById('emailSignature').value = state.settings.emailSignature;
+
+        // Close modal when clicking the X
+        modal.querySelector('.close-modal').addEventListener('click', () => {
+            modal.style.display = 'none';
+        });
+
+        // Close modal when clicking outside
+        window.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.style.display = 'none';
+            }
+        });
+    });
+
+    // Save Settings Button
+    document.getElementById('saveSettings').addEventListener('click', () => {
+        // Update settings in state and localStorage
+        state.settings.defaultFromEmail = document.getElementById('defaultFromEmail').value;
+        state.settings.defaultEmailMethod = document.getElementById('defaultEmailMethod').value;
+        state.settings.emailSignature = document.getElementById('emailSignature').value;
+
+        localStorage.setItem('defaultFromEmail', state.settings.defaultFromEmail);
+        localStorage.setItem('defaultEmailMethod', state.settings.defaultEmailMethod);
+        localStorage.setItem('emailSignature', state.settings.emailSignature);
+
+        // Update UI with new settings
+        elements.fromEmail.value = state.settings.defaultFromEmail;
+        elements.emailMethod.value = state.settings.defaultEmailMethod;
+
+        // Close the modal
+        document.getElementById('settingsModal').style.display = 'none';
+        showToast('Settings saved successfully', 'success');
+    });
     
     // Back from Calendar Button
     elements.backFromCalendar.addEventListener('click', () => {
@@ -1404,6 +1468,15 @@ document.addEventListener('DOMContentLoaded', function() {
 // Initialize the app
 function init() {
     setupContactNameAutocomplete();
+    
+    // Apply saved settings
+    if (state.settings.defaultFromEmail) {
+        elements.fromEmail.value = state.settings.defaultFromEmail;
+    }
+    if (state.settings.defaultEmailMethod) {
+        elements.emailMethod.value = state.settings.defaultEmailMethod;
+    }
+    
     api.fetchExcelFiles()
         .then(files => {
             state.excelFiles = files;

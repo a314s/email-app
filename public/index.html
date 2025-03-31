@@ -274,6 +274,34 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- Settings Modal -->
+                <div id="settingsModal" class="modal">
+                    <div class="modal-content">
+                        <span class="close-modal">&times;</span>
+                        <h3>Settings</h3>
+                        <div class="settings-form">
+                            <div class="form-group">
+                                <label for="defaultFromEmail">Default From Email:</label>
+                                <input type="email" id="defaultFromEmail" placeholder="your@email.com">
+                            </div>
+                            <div class="form-group">
+                                <label for="defaultEmailMethod">Default Email Method:</label>
+                                <select id="defaultEmailMethod">
+                                    <option value="direct">Send Directly</option>
+                                    <option value="outlook">Open in Outlook</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="emailSignature">Email Signature:</label>
+                                <textarea id="emailSignature" rows="4" placeholder="Enter your email signature"></textarea>
+                            </div>
+                            <div class="modal-actions">
+                                <button id="saveSettings" class="btn primary">Save Settings</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
         

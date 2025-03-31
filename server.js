@@ -18,6 +18,15 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Initialize database
+database.initializeDatabase()
+    .then(() => {
+        console.log('Database initialized successfully');
+    })
+    .catch(err => {
+        console.error('Error initializing database:', err);
+    });
+
 // Middleware
 app.use(cors());
 app.use(express.json());
@@ -439,6 +448,73 @@ app.post('/api/send-email', async (req, res) => {
       contactData
     });
     
+    // Get calendar data for a specific month
+    app.get('/api/calendar/:year/:month', async (req, res) => {
+        try {
+            const { year, month } = req.params;
+            const calendarData = await database.getCalendarData(parseInt(year), parseInt(month));
+            res.json({ success: true, calendarData: calendarData.calendarData });
+        } catch (error) {
+            console.error('Error fetching calendar data:', error);
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+    
+    // Get calendar data for a specific company
+    app.get('/api/calendar/:year/:month/:company', async (req, res) => {
+        try {
+            const { year, month, company } = req.params;
+            const calendarData = await database.getCompanyCalendarData(
+                parseInt(year),
+                parseInt(month),
+                decodeURIComponent(company)
+            );
+            res.json({ success: true, calendarData: calendarData.calendarData });
+        } catch (error) {
+            console.error('Error fetching company calendar data:', error);
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+    
+    // Get list of companies
+    app.get('/api/companies', async (req, res) => {
+        try {
+            const companies = await database.getAllCompanies();
+            res.json({ success: true, companies });
+        } catch (error) {
+            console.error('Error fetching companies:', error);
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+    
+    // Get calendar data for a specific month
+    app.get('/api/calendar/:year/:month', async (req, res) => {
+        try {
+            const { year, month } = req.params;
+            const calendarData = await database.getCalendarData(parseInt(year), parseInt(month));
+            res.json({ success: true, calendarData: calendarData.calendarData });
+        } catch (error) {
+            console.error('Error fetching calendar data:', error);
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+    
+    // Get calendar data for a specific company
+    app.get('/api/calendar/:year/:month/:company', async (req, res) => {
+        try {
+            const { year, month, company } = req.params;
+            const calendarData = await database.getCompanyCalendarData(
+                parseInt(year),
+                parseInt(month),
+                decodeURIComponent(company)
+            );
+            res.json({ success: true, calendarData: calendarData.calendarData });
+        } catch (error) {
+            console.error('Error fetching company calendar data:', error);
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+    
     res.json({ 
       success: true, 
       message: 'Email sent successfully',
@@ -449,6 +525,18 @@ app.post('/api/send-email', async (req, res) => {
     console.error('Error sending email:', error);
     res.status(500).json({ success: false, error: error.message });
   }
+});
+
+// Get calendar data for a specific month
+app.get('/api/calendar/:year/:month', async (req, res) => {
+    try {
+        const { year, month } = req.params;
+        const calendarData = await database.getCalendarData(parseInt(year), parseInt(month));
+        res.json({ success: true, calendarData: calendarData.calendarData });
+    } catch (error) {
+        console.error('Error fetching calendar data:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
 });
 
 // Improve email content using Anthropic API
