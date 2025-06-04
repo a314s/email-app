@@ -79,13 +79,6 @@ const elements = {
     settingsBtn: document.getElementById('settingsBtn')
 };
 
-// Settings state
-state.settings = {
-    emailSignature: localStorage.getItem('emailSignature') || '',
-    defaultFromEmail: localStorage.getItem('defaultFromEmail') || '',
-    defaultEmailMethod: localStorage.getItem('defaultEmailMethod') || 'direct'
-};
-
 // App State
 const state = {
     excelFiles: [],
@@ -105,7 +98,12 @@ const state = {
         followUpDetails: null,
         excelFollowUpDetails: null
     },
-    currentFollowUp: null
+    currentFollowUp: null,
+    settings: {
+        emailSignature: localStorage.getItem('emailSignature') || '',
+        defaultFromEmail: localStorage.getItem('defaultFromEmail') || '',
+        defaultEmailMethod: localStorage.getItem('defaultEmailMethod') || 'direct'
+    }
 };
 
 // API Functions
@@ -509,13 +507,17 @@ function showToast(message, type = 'info') {
     }, 3000);
 }
 
-function showSection(section) {
+function hideAllSections() {
     // Hide all sections
     elements.contactInfoSection.classList.add('hidden');
     elements.emailPreviewSection.classList.add('hidden');
     elements.dataTableSection.classList.add('hidden');
     elements.dataEntrySection.classList.add('hidden');
     elements.calendarSection.classList.add('hidden');
+}
+
+function showSection(section) {
+    hideAllSections();
     
     // Show the requested section
     section.classList.remove('hidden');
@@ -1385,7 +1387,7 @@ document.addEventListener('DOMContentLoaded', function() {
     elements.calendarViewBtn.addEventListener('click', () => {
         showSection(elements.calendarSection);
         renderCalendar(new Date().getFullYear(), new Date().getMonth() + 1);
-        loadPendingFollowUps();
+        updateFollowUpsList();
     });
     
     // Company Calendar Button

@@ -448,75 +448,8 @@ app.post('/api/send-email', async (req, res) => {
       contactData
     });
     
-    // Get calendar data for a specific month
-    app.get('/api/calendar/:year/:month', async (req, res) => {
-        try {
-            const { year, month } = req.params;
-            const calendarData = await database.getCalendarData(parseInt(year), parseInt(month));
-            res.json({ success: true, calendarData: calendarData.calendarData });
-        } catch (error) {
-            console.error('Error fetching calendar data:', error);
-            res.status(500).json({ success: false, error: error.message });
-        }
-    });
-    
-    // Get calendar data for a specific company
-    app.get('/api/calendar/:year/:month/:company', async (req, res) => {
-        try {
-            const { year, month, company } = req.params;
-            const calendarData = await database.getCompanyCalendarData(
-                parseInt(year),
-                parseInt(month),
-                decodeURIComponent(company)
-            );
-            res.json({ success: true, calendarData: calendarData.calendarData });
-        } catch (error) {
-            console.error('Error fetching company calendar data:', error);
-            res.status(500).json({ success: false, error: error.message });
-        }
-    });
-    
-    // Get list of companies
-    app.get('/api/companies', async (req, res) => {
-        try {
-            const companies = await database.getAllCompanies();
-            res.json({ success: true, companies });
-        } catch (error) {
-            console.error('Error fetching companies:', error);
-            res.status(500).json({ success: false, error: error.message });
-        }
-    });
-    
-    // Get calendar data for a specific month
-    app.get('/api/calendar/:year/:month', async (req, res) => {
-        try {
-            const { year, month } = req.params;
-            const calendarData = await database.getCalendarData(parseInt(year), parseInt(month));
-            res.json({ success: true, calendarData: calendarData.calendarData });
-        } catch (error) {
-            console.error('Error fetching calendar data:', error);
-            res.status(500).json({ success: false, error: error.message });
-        }
-    });
-    
-    // Get calendar data for a specific company
-    app.get('/api/calendar/:year/:month/:company', async (req, res) => {
-        try {
-            const { year, month, company } = req.params;
-            const calendarData = await database.getCompanyCalendarData(
-                parseInt(year),
-                parseInt(month),
-                decodeURIComponent(company)
-            );
-            res.json({ success: true, calendarData: calendarData.calendarData });
-        } catch (error) {
-            console.error('Error fetching company calendar data:', error);
-            res.status(500).json({ success: false, error: error.message });
-        }
-    });
-    
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       message: 'Email sent successfully',
       emailId,
       messageId: info.messageId
@@ -834,60 +767,6 @@ app.post('/api/follow-ups/:id/complete', (req, res) => {
   }
 });
 
-// Get calendar data for a month
-app.get('/api/calendar/:year/:month', (req, res) => {
-  try {
-    const { year, month } = req.params;
-    const yearNum = parseInt(year);
-    const monthNum = parseInt(month);
-    
-    if (isNaN(yearNum) || isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
-      return res.status(400).json({ success: false, error: 'Invalid year or month' });
-    }
-    
-    database.getCalendarData(yearNum, monthNum)
-      .then(result => {
-        res.json(result);
-      })
-      .catch(error => {
-        console.error('Error fetching calendar data:', error);
-        res.status(500).json({ success: false, error: error.message });
-      });
-  } catch (error) {
-    console.error('Error fetching calendar data:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// Get calendar data for a specific company
-app.get('/api/calendar/company/:year/:month/:company', (req, res) => {
-  try {
-    const { year, month, company } = req.params;
-    const yearNum = parseInt(year);
-    const monthNum = parseInt(month);
-    
-    if (isNaN(yearNum) || isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
-      return res.status(400).json({ success: false, error: 'Invalid year or month' });
-    }
-    
-    if (!company) {
-      return res.status(400).json({ success: false, error: 'Company name is required' });
-    }
-    
-    database.getCompanyCalendarData(yearNum, monthNum, company)
-      .then(result => {
-        res.json(result);
-      })
-      .catch(error => {
-        console.error('Error fetching company calendar data:', error);
-        res.status(500).json({ success: false, error: error.message });
-      });
-  } catch (error) {
-    console.error('Error fetching company calendar data:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
 // Get all companies
 app.get('/api/companies', (req, res) => {
   try {
@@ -905,51 +784,33 @@ app.get('/api/companies', (req, res) => {
   }
 });
 
-// Get a list of all companies
-app.get('/api/companies', (req, res) => {
-  database.getAllCompanies()
-    .then(companies => {
-      res.json({ success: true, companies });
-    })
-    .catch(error => {
-      console.error('Error fetching companies:', error);
-      res.status(500).json({ success: false, error: 'Failed to fetch companies' });
-    });
-});
-
 // Get calendar data for a specific company
-app.get('/api/calendar/company/:year/:month/:company', (req, res) => {
-  const year = parseInt(req.params.year);
-  const month = parseInt(req.params.month);
-  const company = req.params.company;
-  
-  if (isNaN(year) || isNaN(month) || !company) {
-    return res.status(400).json({ success: false, error: 'Invalid parameters' });
+app.get('/api/calendar/:year/:month/:company', (req, res) => {
+  try {
+    const { year, month, company } = req.params;
+    const yearNum = parseInt(year);
+    const monthNum = parseInt(month);
+    
+    if (isNaN(yearNum) || isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
+      return res.status(400).json({ success: false, error: 'Invalid year or month' });
+    }
+    
+    if (!company) {
+      return res.status(400).json({ success: false, error: 'Company name is required' });
+    }
+    
+    database.getCompanyCalendarData(yearNum, monthNum, decodeURIComponent(company))
+      .then(result => {
+        res.json(result);
+      })
+      .catch(error => {
+        console.error('Error fetching company calendar data:', error);
+        res.status(500).json({ success: false, error: error.message });
+      });
+  } catch (error) {
+    console.error('Error fetching company calendar data:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
-  
-  database.getCalendarDataForCompany(year, month, company)
-    .then(calendarData => {
-      res.json({ success: true, calendarData });
-    })
-    .catch(error => {
-      console.error('Error fetching calendar data for company:', error);
-      res.status(500).json({ success: false, error: 'Failed to fetch calendar data' });
-    });
-});
-
-// Complete a follow-up
-app.post('/api/follow-ups/:id/complete', (req, res) => {
-  const followUpId = req.params.id;
-  const notes = req.body.notes || '';
-  
-  database.completeFollowUp(followUpId, notes)
-    .then(result => {
-      res.json({ success: true, message: 'Follow-up completed successfully' });
-    })
-    .catch(error => {
-      console.error('Error completing follow-up:', error);
-      res.status(500).json({ success: false, error: 'Failed to complete follow-up' });
-    });
 });
 
 // Start the server
