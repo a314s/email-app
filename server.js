@@ -674,7 +674,7 @@ app.post('/api/emails/record', (req, res) => {
 
 // Get all sent emails
 app.get('/api/emails', (req, res) => {
-  database.getSentEmails()
+  database.getEmails()
     .then(emails => {
       res.json({ success: true, emails });
     })
