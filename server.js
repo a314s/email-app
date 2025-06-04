@@ -9,7 +9,7 @@ const multer = require('multer');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const mammoth = require('mammoth');
-const { Anthropic } = require('@anthropic-ai/sdk');
+const OpenAI = require('openai');
 const database = require('./database');
 
 // Load environment variables
@@ -472,7 +472,7 @@ app.get('/api/calendar/:year/:month', async (req, res) => {
     }
 });
 
-// Improve email content using Anthropic API
+// Improve email content using OpenAI ChatGPT API
 app.post('/api/improve-email', async (req, res) => {
   try {
     const { content, contactData } = req.body;
@@ -481,10 +481,10 @@ app.post('/api/improve-email', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Email content is required' });
     }
     
-    // Check if Anthropic API key is available
-    const apiKey = process.env.ANTHROPIC_API_KEY;
+    // Check if OpenAI API key is available
+    const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
-      return res.status(400).json({ success: false, error: 'Anthropic API key is not configured' });
+      return res.status(400).json({ success: false, error: 'OpenAI API key is not configured' });
     }
     
     // Prepare contact information for context
@@ -498,11 +498,11 @@ app.post('/api/improve-email', async (req, res) => {
       }
     }
     
-    console.log('Calling Anthropic API with key:', apiKey.substring(0, 5) + '...');
+    console.log('Calling OpenAI API with key:', apiKey.substring(0, 5) + '...');
     
     try {
-      // Initialize the Anthropic client
-      const anthropic = new Anthropic({
+      // Initialize the OpenAI client
+      const openai = new OpenAI({
         apiKey: apiKey,
       });
       
@@ -521,33 +521,34 @@ ${content}
 
 Improved Email:`;
 
-      console.log('Sending message to Anthropic...');
+      console.log('Sending message to OpenAI...');
       
-      // Call Anthropic API with the latest format
-      const response = await anthropic.messages.create({
-        model: "claude-3-7-sonnet-20250219",
+      // Call OpenAI API
+      const response = await openai.chat.completions.create({
+        model: "gpt-4",
         messages: [
           {
-            role: "user", 
+            role: "user",
             content: userMessage
           }
         ],
-        max_tokens: 4000
+        max_tokens: 4000,
+        temperature: 0.7
       });
       
-      console.log('Anthropic API response received');
+      console.log('OpenAI API response received');
       
       // Extract the improved content from the response
-      const improvedContent = response.content[0].text;
+      const improvedContent = response.choices[0].message.content;
       
       res.json({
         success: true,
         improvedContent
       });
     } catch (apiError) {
-      console.error('Error calling Anthropic API:', apiError);
-      return res.status(500).json({ 
-        success: false, 
+      console.error('Error calling OpenAI API:', apiError);
+      return res.status(500).json({
+        success: false,
         error: 'Failed to improve email content',
         details: apiError.message
       });

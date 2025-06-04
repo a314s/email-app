@@ -1,95 +1,126 @@
 # Email Automation App
 
-This application helps you automate the process of sending emails based on data from Google Sheets and Word document templates.
+A comprehensive email automation application that integrates with Excel files for contact management, email templating, and follow-up tracking.
 
 ## Features
 
-- Connect to Google Sheets to access contact information
-- Search for contacts by line number or name
-- Upload and use Word document templates with dynamic content replacement
-- Generate emails with personalized content
-- Send emails directly or open in Outlook
-- View all contacts in a data table
-- Get detailed information about each contact
+- 📊 Excel file integration for contact management
+- 📧 Email template processing with Word documents
+- 🤖 AI-powered email content improvement using ChatGPT
+- 📅 Calendar view for tracking sent emails and follow-ups
+- 🔄 Automated follow-up scheduling
+- 🏢 Company-specific filtering and views
+- 📱 Responsive web interface
 
 ## Setup Instructions
 
-### Prerequisites
+### 1. Clone the Repository
+```bash
+git clone <repository-url>
+cd email-automation-app
+```
 
-- Node.js (v14 or higher)
-- Google Sheets API credentials
-- Microsoft Word for template creation
-
-### Installation
-
-1. Clone this repository or download the files
-2. Open a terminal in the project directory
-3. Install dependencies:
-
+### 2. Install Dependencies
 ```bash
 npm install
 ```
 
-4. Create a `.env` file in the root directory with the following variables:
+### 3. Environment Configuration
 
+Copy the example environment file:
+```bash
+copy .env.example .env
 ```
+
+Edit the `.env` file and add your configuration:
+
+```env
+# Email Configuration (for sending emails)
+EMAIL_USER=your-email@gmail.com
+EMAIL_PASSWORD=your-app-password
+
+# OpenAI API Configuration (for AI email improvement)
+OPENAI_API_KEY=your-openai-api-key-here
+
+# Server Configuration
 PORT=3000
-GOOGLE_APPLICATION_CREDENTIALS=path/to/your/credentials.json
-SMTP_HOST=your-smtp-host
-SMTP_PORT=587
-SMTP_SECURE=false
-SMTP_USER=your-email@example.com
-SMTP_PASS=your-password
-DEFAULT_FROM_EMAIL=your-email@example.com
 ```
 
-### Google Sheets API Setup
+#### Getting Your API Keys:
 
-1. Go to the [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a new project
-3. Enable the Google Sheets API
-4. Create credentials (Service Account Key)
-5. Download the JSON key file
-6. Set the path to this file in your `.env` file
+**OpenAI API Key:**
+1. Go to [OpenAI API Keys](https://platform.openai.com/api-keys)
+2. Sign in or create an account
+3. Click "Create new secret key"
+4. Copy the key and add it to your `.env` file
 
-### Creating Word Templates
+**Email Configuration:**
+- For Gmail, use an App Password instead of your regular password
+- Go to Google Account settings → Security → 2-Step Verification → App passwords
+- Generate an app password for "Mail"
 
-1. Create a Word document (.docx) with your email content
-2. Use placeholders like `[Name]`, `[Company]`, etc. that match your Google Sheet column names
-3. Save the document
+### 4. Run the Application
 
-## Usage
+Development mode (with auto-restart):
+```bash
+npm run dev
+```
 
-1. Start the server:
-
+Production mode:
 ```bash
 npm start
 ```
 
-2. Open your browser and navigate to `http://localhost:3000`
-3. Enter your Google Sheet ID (from the URL of your Google Sheet)
-4. Select the sheet containing your contact data
-5. Upload your Word template
-6. Search for a contact by line number or name
-7. Generate an email using the selected template
-8. Send the email directly or open in Outlook
+The application will be available at `http://localhost:3000`
 
-## Google Sheet Structure
+## Usage
 
-The application expects your Google Sheet to be structured as follows:
+1. **Upload Excel Files**: Use the Excel File Configuration section to upload or select existing Excel files
+2. **Select Sheet**: Choose the appropriate sheet from your Excel file
+3. **Load Contacts**: Click "Load Contacts" to import the data
+4. **Search Contacts**: Use line number or name search to find specific contacts
+5. **Upload Templates**: Add Word document templates for email generation
+6. **Generate Emails**: Select a contact and template to generate personalized emails
+7. **AI Improvement**: Use the "Improve Email" feature to enhance your email content with ChatGPT
+8. **Calendar View**: Track sent emails and manage follow-ups in the calendar interface
 
-- Multiple sheets, one per region
-- Column A contains company names
-- Each company name appears once, with multiple rows beneath it for different contacts
-- Column E typically contains contact names
-- Other columns contain additional contact information
+## File Structure
 
-## Troubleshooting
+```
+email-automation-app/
+├── public/           # Frontend files
+├── excel/           # Uploaded Excel files
+├── templates/       # Email templates (Word documents)
+├── data/           # SQLite database
+├── server.js       # Main server file
+├── database.js     # Database operations
+└── package.json    # Dependencies and scripts
+```
 
-- If you're having trouble connecting to Google Sheets, make sure your credentials are correct and the API is enabled
-- If templates aren't working, ensure that the placeholders in your Word document exactly match the column names in your Google Sheet
-- For email sending issues, check your SMTP settings in the `.env` file
+## Environment Variables
+
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `OPENAI_API_KEY` | OpenAI API key for email improvement | Yes (for AI features) |
+| `EMAIL_USER` | Email address for sending emails | Yes (for email sending) |
+| `EMAIL_PASSWORD` | Email password/app password | Yes (for email sending) |
+| `PORT` | Server port (default: 3000) | No |
+
+## Security Notes
+
+- Never commit your `.env` file to version control
+- Use app passwords for email accounts when possible
+- Keep your OpenAI API key secure and monitor usage
+- The `.env` file is already included in `.gitignore`
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Test thoroughly
+5. Submit a pull request
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License.
