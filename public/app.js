@@ -103,7 +103,8 @@ const state = {
         emailSignature: localStorage.getItem('emailSignature') || '',
         defaultFromEmail: localStorage.getItem('defaultFromEmail') || '',
         defaultEmailMethod: localStorage.getItem('defaultEmailMethod') || 'direct'
-    }
+    },
+    excelColumnMapping: null
 };
 
 // API Functions
@@ -353,15 +354,32 @@ const api = {
         }
     },
     
-    async sendEmail(to, subject, content, from) {
+    async sendEmail(to, subject, content, from, contactData = null) {
         showLoading(true);
         try {
+            const requestBody = { 
+                to, 
+                subject, 
+                content, 
+                from 
+            };
+            
+            // Add contact data if provided
+            if (contactData) {
+                requestBody.contactData = contactData;
+            }
+            
+            // Add column mapping if available
+            if (state.excelColumnMapping) {
+                requestBody.columnMapping = state.excelColumnMapping;
+            }
+            
             const response = await fetch('/api/send-email', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ to, subject, content, from })
+                body: JSON.stringify(requestBody)
             });
             
             const data = await response.json();
@@ -422,11 +440,21 @@ const api = {
     async fetchCalendar(year, month) {
         showLoading(true);
         try {
-            let url = `/api/calendar/${year}/${month}`;
-            
-            // If a company is selected, use the company-specific endpoint
+            let url;
             if (state.selectedCompany) {
                 url = `/api/calendar/${year}/${month}/${encodeURIComponent(state.selectedCompany)}`;
+            } else {
+                url = `/api/calendar/${year}/${month}`;
+            }
+            
+            // Add column mapping if available
+            if (state.excelColumnMapping) {
+                const params = new URLSearchParams({
+                    firstEmailColumn: state.excelColumnMapping.firstEmail,
+                    secondEmailColumn: state.excelColumnMapping.secondEmail,
+                    thirdEmailColumn: state.excelColumnMapping.thirdEmail
+                });
+                url += `?${params.toString()}`;
             }
             
             const response = await fetch(url);
@@ -483,6 +511,40 @@ const api = {
             
             return data.followUps;
         } catch (error) {
+            showToast(error.message, 'error');
+            throw error;
+        } finally {
+            showLoading(false);
+        }
+    },
+    
+    async analyzeExcelColumns(filename, sheetName) {
+        showLoading(true);
+        try {
+            const response = await fetch('/api/excel/analyze-columns', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    filename,
+                    sheetName
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (!data.success) {
+                throw new Error(data.error || 'Failed to analyze Excel columns');
+            }
+            
+            if (!data.analysis || !data.analysis.firstEmailColumn) {
+                throw new Error('Invalid column analysis results');
+            }
+            
+            return data.analysis;
+        } catch (error) {
+            console.error('Error analyzing Excel columns:', error);
             showToast(error.message, 'error');
             throw error;
         } finally {
@@ -1121,6 +1183,20 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         
         try {
+            // First, analyze the columns
+            const columnAnalysis = await api.analyzeExcelColumns(state.selectedExcelFile, state.selectedSheet);
+            
+            // Store the column mapping in state
+            state.excelColumnMapping = {
+                firstEmail: columnAnalysis.firstEmailColumn,
+                secondEmail: columnAnalysis.secondEmailColumn,
+                thirdEmail: columnAnalysis.thirdEmailColumn
+            };
+            
+            // Show the analysis results to the user
+            showToast(`Identified email columns with ${columnAnalysis.confidence} confidence: ${columnAnalysis.explanation}`, 'info');
+            
+            // Load the sheet data
             const data = await api.fetchSheetData(state.selectedExcelFile, state.selectedSheet);
             state.sheetData = data;
             showToast('Contacts loaded successfully', 'success');
@@ -1289,7 +1365,17 @@ document.addEventListener('DOMContentLoaded', function() {
         
         if (elements.emailMethod.value === 'direct') {
             try {
-                await api.sendEmail(to, subject, content, from);
+                // Prepare contact data with Excel file information
+                let contactData = null;
+                if (state.currentContact) {
+                    contactData = {
+                        ...state.currentContact,
+                        excelFile: state.selectedExcelFile,
+                        sheetName: state.selectedSheet
+                    };
+                }
+                
+                await api.sendEmail(to, subject, content, from, contactData);
                 showToast('Email sent successfully', 'success');
                 showSection(elements.contactInfoSection);
             } catch (error) {
@@ -1600,6 +1686,19 @@ function createDayElement(day, className, dayData) {
         });
     }
     
+    // Add Excel email dates
+    if (dayData.excelFollowUps && dayData.excelFollowUps.length > 0) {
+        dayData.excelFollowUps.forEach(excelData => {
+            const excelElement = document.createElement('div');
+            excelElement.classList.add('day-excel-follow-up');
+            excelElement.textContent = `Excel Email #${excelData.followUpNumber}: ${excelData.contact_name}`;
+            excelElement.dataset.id = excelData.id;
+            excelElement.dataset.type = 'excelFollowUp';
+            excelElement.addEventListener('click', () => showExcelFollowUpDetails(excelData));
+            eventsContainer.appendChild(excelElement);
+        });
+    }
+    
     // Add follow-ups
     if (dayData.followUps && dayData.followUps.length > 0) {
         dayData.followUps.forEach(followUp => {
@@ -1618,21 +1717,7 @@ function createDayElement(day, className, dayData) {
         });
     }
     
-    // Add Excel follow-ups
-    if (dayData.excelFollowUps && dayData.excelFollowUps.length > 0) {
-        dayData.excelFollowUps.forEach(excelFollowUp => {
-            const excelElement = document.createElement('div');
-            excelElement.classList.add('day-excel-follow-up');
-            excelElement.textContent = `Excel #${excelFollowUp.followUpNumber}: ${excelFollowUp.contact_name || excelFollowUp.recipient.split('@')[0]}`;
-            excelElement.dataset.id = excelFollowUp.id;
-            excelElement.dataset.type = 'excelFollowUp';
-            excelElement.addEventListener('click', () => showExcelFollowUpDetails(excelFollowUp));
-            eventsContainer.appendChild(excelElement);
-        });
-    }
-    
     dayElement.appendChild(eventsContainer);
-    
     return dayElement;
 }
 
@@ -1892,59 +1977,38 @@ function showFollowUpDetails(followUp) {
 }
 
 // Show Excel follow-up details in a modal
-function showExcelFollowUpDetails(excelFollowUp) {
-    const modal = document.getElementById('excelFollowUpDetailsModal');
-    const content = document.getElementById('excelFollowUpDetailsContent');
-    
-    // Format the date
-    const followUpDate = new Date(excelFollowUp.followUpDate);
-    const formattedDate = followUpDate.toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric'
-    });
+function showExcelFollowUpDetails(excelData) {
+    const modal = document.getElementById('emailDetailsModal');
+    const content = document.getElementById('emailDetailsContent');
     
     content.innerHTML = `
         <div class="detail-row">
             <div class="detail-label">Contact:</div>
-            <div class="detail-value">${excelFollowUp.contact_name || 'N/A'}</div>
+            <div class="detail-value">${excelData.contact_name}</div>
         </div>
         <div class="detail-row">
             <div class="detail-label">Company:</div>
-            <div class="detail-value">${excelFollowUp.company || 'N/A'}</div>
+            <div class="detail-value">${excelData.company}</div>
         </div>
         <div class="detail-row">
-            <div class="detail-label">Email #:</div>
-            <div class="detail-value">${excelFollowUp.followUpNumber}</div>
+            <div class="detail-label">Email:</div>
+            <div class="detail-value">${excelData.recipient}</div>
+        </div>
+        <div class="detail-row">
+            <div class="detail-label">Follow-up Number:</div>
+            <div class="detail-value">${excelData.followUpNumber}</div>
         </div>
         <div class="detail-row">
             <div class="detail-label">Date:</div>
-            <div class="detail-value">${formattedDate}</div>
+            <div class="detail-value">${new Date(excelData.followUpDate).toLocaleDateString()}</div>
         </div>
         <div class="detail-row">
             <div class="detail-label">Status:</div>
-            <div class="detail-value">${excelFollowUp.status || 'N/A'}</div>
-        </div>
-        <div class="detail-row">
-            <div class="detail-label">Excel File:</div>
-            <div class="detail-value">${excelFollowUp.excel_file || 'N/A'}</div>
+            <div class="detail-value">${excelData.status || 'Not set'}</div>
         </div>
     `;
     
-    // Show the modal
     modal.style.display = 'block';
-    
-    // Close modal when clicking the X
-    modal.querySelector('.close-modal').addEventListener('click', () => {
-        modal.style.display = 'none';
-    });
-    
-    // Close modal when clicking outside
-    window.addEventListener('click', (e) => {
-        if (e.target === modal) {
-            modal.style.display = 'none';
-        }
-    });
 }
 
 // Show company calendar view
@@ -1965,4 +2029,57 @@ function showCompanyCalendarView() {
     
     // Show a toast message to guide the user
     showToast('Please select a company from the dropdown to view its calendar', 'info');
+}
+
+// Update the importFollowUpDataFromExcel function to use the identified columns
+function importFollowUpDataFromExcel(excelFile, sheetName, contactData) {
+    return new Promise((resolve, reject) => {
+        try {
+            // Check if we have follow-up data in the Excel
+            if (!contactData) {
+                resolve(null);
+                return;
+            }
+            
+            // Use the identified columns from the analysis
+            const firstEmailDate = contactData[state.excelColumnMapping.firstEmail] || null;
+            const firstEmailStatus = contactData[`${state.excelColumnMapping.firstEmail} Status`] || null;
+            const secondEmailDate = contactData[state.excelColumnMapping.secondEmail] || null;
+            const secondEmailStatus = contactData[`${state.excelColumnMapping.secondEmail} Status`] || null;
+            const thirdEmailDate = contactData[state.excelColumnMapping.thirdEmail] || null;
+            const thirdEmailStatus = contactData[`${state.excelColumnMapping.thirdEmail} Status`] || null;
+            
+            // If no follow-up data, return
+            if (!firstEmailDate && !secondEmailDate && !thirdEmailDate) {
+                resolve(null);
+                return;
+            }
+            
+            // Format the data
+            const followUpData = {
+                excelFile,
+                sheetName,
+                lineNumber: contactData.lineNumber,
+                company: contactData.company || contactData[Object.keys(contactData)[0]] || null,
+                contactName: contactData.Name || contactData['שם'] || null,
+                firstEmail: {
+                    date: firstEmailDate ? new Date(firstEmailDate) : null,
+                    status: firstEmailStatus
+                },
+                secondEmail: {
+                    date: secondEmailDate ? new Date(secondEmailDate) : null,
+                    status: secondEmailStatus
+                },
+                thirdEmail: {
+                    date: thirdEmailDate ? new Date(thirdEmailDate) : null,
+                    status: thirdEmailStatus
+                }
+            };
+            
+            resolve(followUpData);
+        } catch (error) {
+            console.error('Error importing follow-up data from Excel:', error);
+            reject(error);
+        }
+    });
 }

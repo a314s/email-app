@@ -414,7 +414,7 @@ app.post('/api/generate-email', async (req, res) => {
 // Send email
 app.post('/api/send-email', async (req, res) => {
   try {
-    const { to, subject, content, from } = req.body;
+    const { to, subject, content, from, columnMapping } = req.body;
     const contactData = req.body.contactData || {};
     
     if (!to || !subject || !content) {
@@ -448,6 +448,25 @@ app.post('/api/send-email', async (req, res) => {
       contactData
     });
     
+    // Handle Excel follow-up data if available
+    if (contactData && contactData.excelFile && contactData.sheetName) {
+      try {
+        const followUpData = await database.importFollowUpDataFromExcel(
+          contactData.excelFile, 
+          contactData.sheetName, 
+          contactData, 
+          columnMapping
+        );
+        
+        if (followUpData) {
+          await database.updateEmailWithExcelData(emailId, followUpData);
+        }
+      } catch (error) {
+        console.error('Error importing Excel follow-up data:', error);
+        // Don't fail the email send, just log the error
+      }
+    }
+    
     res.json({
       success: true,
       message: 'Email sent successfully',
@@ -464,7 +483,20 @@ app.post('/api/send-email', async (req, res) => {
 app.get('/api/calendar/:year/:month', async (req, res) => {
     try {
         const { year, month } = req.params;
-        const calendarData = await database.getCalendarData(parseInt(year), parseInt(month));
+        const { firstEmailColumn, secondEmailColumn, thirdEmailColumn } = req.query;
+        
+        console.log('Calendar request received:', { year, month });
+        console.log('Column mapping from query:', { firstEmailColumn, secondEmailColumn, thirdEmailColumn });
+        
+        const columnMapping = {
+            firstEmailColumn: firstEmailColumn || 'excel_first_email_date',
+            secondEmailColumn: secondEmailColumn || 'excel_second_email_date', 
+            thirdEmailColumn: thirdEmailColumn || 'excel_third_email_date'
+        };
+        
+        console.log('Final column mapping:', columnMapping);
+        
+        const calendarData = await database.getCalendarData(parseInt(year), parseInt(month), columnMapping);
         res.json({ success: true, calendarData: calendarData.calendarData });
     } catch (error) {
         console.error('Error fetching calendar data:', error);
@@ -525,7 +557,7 @@ Improved Email:`;
       
       // Call OpenAI API
       const response = await openai.chat.completions.create({
-        model: "gpt-4",
+        model: "gpt-4o",
         messages: [
           {
             role: "user",
@@ -625,7 +657,7 @@ app.post('/api/excel/update', (req, res) => {
 // Record a sent email
 app.post('/api/emails/record', (req, res) => {
   try {
-    const { recipient, subject, content, contactData } = req.body;
+    const { recipient, subject, content, contactData, columnMapping } = req.body;
     
     if (!recipient || !subject || !content) {
       return res.status(400).json({ success: false, error: 'Missing required fields' });
@@ -636,7 +668,7 @@ app.post('/api/emails/record', (req, res) => {
       .then(emailId => {
         // Then, check if we have follow-up data from Excel
         if (contactData && contactData.excelFile && contactData.sheetName) {
-          database.importFollowUpDataFromExcel(contactData.excelFile, contactData.sheetName, contactData)
+          database.importFollowUpDataFromExcel(contactData.excelFile, contactData.sheetName, contactData, columnMapping)
             .then(followUpData => {
               if (followUpData) {
                 // Update the email with Excel follow-up data
@@ -710,7 +742,7 @@ app.get('/api/emails/date/:date', (req, res) => {
 
 // Get all pending follow-ups
 app.get('/api/follow-ups', (req, res) => {
-  database.getPendingFollowUps()
+  database.getFollowUps()
     .then(followUps => {
       res.json({ success: true, followUps });
     })
@@ -789,8 +821,12 @@ app.get('/api/companies', (req, res) => {
 app.get('/api/calendar/:year/:month/:company', (req, res) => {
   try {
     const { year, month, company } = req.params;
+    const { firstEmailColumn, secondEmailColumn, thirdEmailColumn } = req.query;
     const yearNum = parseInt(year);
     const monthNum = parseInt(month);
+    
+    console.log('Company calendar request received:', { year, month, company });
+    console.log('Column mapping from query:', { firstEmailColumn, secondEmailColumn, thirdEmailColumn });
     
     if (isNaN(yearNum) || isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
       return res.status(400).json({ success: false, error: 'Invalid year or month' });
@@ -800,7 +836,15 @@ app.get('/api/calendar/:year/:month/:company', (req, res) => {
       return res.status(400).json({ success: false, error: 'Company name is required' });
     }
     
-    database.getCompanyCalendarData(yearNum, monthNum, decodeURIComponent(company))
+    const columnMapping = {
+      firstEmailColumn: firstEmailColumn || 'excel_first_email_date',
+      secondEmailColumn: secondEmailColumn || 'excel_second_email_date', 
+      thirdEmailColumn: thirdEmailColumn || 'excel_third_email_date'
+    };
+    
+    console.log('Final column mapping for company calendar:', columnMapping);
+    
+    database.getCompanyCalendarData(yearNum, monthNum, decodeURIComponent(company), columnMapping)
       .then(result => {
         res.json(result);
       })
@@ -810,6 +854,171 @@ app.get('/api/calendar/:year/:month/:company', (req, res) => {
       });
   } catch (error) {
     console.error('Error fetching company calendar data:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Analyze Excel columns to identify email sent columns
+app.post('/api/excel/analyze-columns', async (req, res) => {
+  try {
+    const { filename, sheetName } = req.body;
+    
+    if (!filename || !sheetName) {
+      return res.status(400).json({ success: false, error: 'Missing required parameters' });
+    }
+    
+    const filePath = path.join(__dirname, 'excel', filename);
+    
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ success: false, error: 'File not found' });
+    }
+    
+    // Read the Excel file
+    const workbook = XLSX.readFile(filePath);
+    
+    if (!workbook.SheetNames.includes(sheetName)) {
+      return res.status(404).json({ success: false, error: 'Sheet not found' });
+    }
+    
+    const worksheet = workbook.Sheets[sheetName];
+    const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+    
+    if (jsonData.length === 0) {
+      return res.status(404).json({ success: false, error: 'No data found in sheet' });
+    }
+    
+    // Get headers (first row)
+    const headers = jsonData[0];
+    
+    console.log('Excel headers found:', headers);
+    console.log('Looking for email columns in:', headers.length, 'columns');
+    
+    // Get a sample of data (first 5 rows after headers)
+    const sampleData = jsonData.slice(1, 6).map(row => {
+      const rowData = {};
+      headers.forEach((header, index) => {
+        rowData[header] = row[index] || '';
+      });
+      return rowData;
+    });
+    
+    // Prepare the prompt for ChatGPT
+    const prompt = `Analyze this Excel sheet data and identify the columns that represent email sent dates.
+
+ALL COLUMN HEADERS: ${headers.join(', ')}
+
+Sample Data (first 5 rows):
+${JSON.stringify(sampleData, null, 2)}
+
+Task: Identify which columns are most likely to be:
+1. First email sent date
+2. Second email sent date  
+3. Third email sent date
+
+PRIORITY SEARCH PATTERNS (look for these exact patterns first):
+- "1st email sent", "2nd email sent", "3rd email sent"
+- "first email sent", "second email sent", "third email sent"
+- "email 1 sent", "email 2 sent", "email 3 sent"
+- Any column containing "1st" AND ("email" OR "sent")
+- Any column containing "2nd" AND ("email" OR "sent")
+- Any column containing "3rd" AND ("email" OR "sent")
+
+SECONDARY PATTERNS:
+- Columns with "email" and "date" in the name
+- Columns with "sent" and "date" in the name
+- Date columns that appear to be in sequence
+
+RULES:
+- Search case-insensitively through ALL headers
+- You MUST return all three columns, even if confidence is low
+- If you find exact matches like "1st email sent", use those with HIGH confidence
+- If no exact matches, look for partial matches with MEDIUM confidence
+- As last resort, use any date-related columns with LOW confidence
+
+Return ONLY a JSON object (no markdown formatting) in this exact format:
+{
+  "firstEmailColumn": "exact_column_name_from_headers",
+  "secondEmailColumn": "exact_column_name_from_headers", 
+  "thirdEmailColumn": "exact_column_name_from_headers",
+  "confidence": "high/medium/low",
+  "explanation": "brief explanation of why these columns were chosen"
+}`;
+    
+    // Call ChatGPT API
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "system",
+            content: "You are an expert at analyzing Excel spreadsheets. Your task is to identify columns that represent email sent dates. You must always return a valid JSON object with all required fields. NEVER use markdown formatting or code blocks. Return ONLY the raw JSON object. Look carefully for columns like '1st email sent', '2nd email sent', '3rd email sent' or similar patterns."
+          },
+          {
+            role: "user",
+            content: prompt
+          }
+        ],
+        temperature: 0.3
+      })
+    });
+    
+    const data = await response.json();
+    
+    if (!data.choices || !data.choices[0]) {
+      throw new Error('Invalid response from ChatGPT');
+    }
+    
+    // Extract the JSON from the response
+    let content = data.choices[0].message.content.trim();
+    
+    // Remove markdown code blocks if present
+    if (content.startsWith('```json')) {
+      content = content.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+    } else if (content.startsWith('```')) {
+      content = content.replace(/^```\s*/, '').replace(/\s*```$/, '');
+    }
+    
+    // Try to parse the response as JSON
+    let analysis;
+    try {
+      analysis = JSON.parse(content);
+    } catch (error) {
+      console.error('Error parsing ChatGPT response:', content);
+      throw new Error('Invalid response format from ChatGPT');
+    }
+    
+    // Validate the required fields
+    if (!analysis.firstEmailColumn || !analysis.secondEmailColumn || !analysis.thirdEmailColumn) {
+      // If any required field is missing, try to find date columns in the headers
+      const dateColumns = headers.filter(header => 
+        header && (
+          header.toLowerCase().includes('date') ||
+          header.toLowerCase().includes('email') ||
+          header.toLowerCase().includes('sent')
+        )
+      );
+      
+      // Use the last three date columns found, or pad with empty strings
+      analysis = {
+        firstEmailColumn: dateColumns[dateColumns.length - 3] || headers[headers.length - 3] || 'M',
+        secondEmailColumn: dateColumns[dateColumns.length - 2] || headers[headers.length - 2] || 'O',
+        thirdEmailColumn: dateColumns[dateColumns.length - 1] || headers[headers.length - 1] || 'Q',
+        confidence: 'low',
+        explanation: 'Using fallback columns based on header analysis'
+      };
+    }
+    
+    res.json({
+      success: true,
+      analysis
+    });
+  } catch (error) {
+    console.error('Error analyzing Excel columns:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });

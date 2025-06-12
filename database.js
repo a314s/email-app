@@ -40,6 +40,25 @@ function initializeDatabase() {
                     reject(err);
                     return;
                 }
+                
+                // Add Excel columns if they don't exist (migration)
+                const addColumnPromises = [
+                    addColumnIfNotExists('emails', 'excel_first_email_date', 'TEXT'),
+                    addColumnIfNotExists('emails', 'excel_first_email_status', 'TEXT'),
+                    addColumnIfNotExists('emails', 'excel_second_email_date', 'TEXT'),
+                    addColumnIfNotExists('emails', 'excel_second_email_status', 'TEXT'),
+                    addColumnIfNotExists('emails', 'excel_third_email_date', 'TEXT'),
+                    addColumnIfNotExists('emails', 'excel_third_email_status', 'TEXT')
+                ];
+                
+                Promise.all(addColumnPromises)
+                    .then(() => {
+                        console.log('Excel columns migration completed');
+                    })
+                    .catch(err => {
+                        console.error('Error during Excel columns migration:', err);
+                        // Don't reject here, as the columns might already exist
+                    });
             });
 
             // Create follow-ups table
@@ -60,6 +79,39 @@ function initializeDatabase() {
                 }
                 resolve();
             });
+        });
+    });
+}
+
+// Helper function to add a column if it doesn't exist
+function addColumnIfNotExists(tableName, columnName, columnType) {
+    return new Promise((resolve, reject) => {
+        // First, check if the column exists
+        db.all(`PRAGMA table_info(${tableName})`, (err, rows) => {
+            if (err) {
+                console.error(`Error checking table info for ${tableName}:`, err);
+                reject(err);
+                return;
+            }
+            
+            // Check if the column already exists
+            const columnExists = rows.some(row => row.name === columnName);
+            
+            if (!columnExists) {
+                // Add the column
+                db.run(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnType}`, (err) => {
+                    if (err) {
+                        console.error(`Error adding column ${columnName} to ${tableName}:`, err);
+                        reject(err);
+                        return;
+                    }
+                    console.log(`Added column ${columnName} to ${tableName}`);
+                    resolve();
+                });
+            } else {
+                console.log(`Column ${columnName} already exists in ${tableName}`);
+                resolve();
+            }
         });
     });
 }
@@ -91,24 +143,110 @@ function recordEmail(emailData) {
                     return;
                 }
                 
-                // Create follow-up reminder for 1 week later
                 const emailId = this.lastID;
+                
+                // Create follow-up reminders
+                const followUpPromises = [];
+                
+                // Create follow-up reminder for 1 week later
                 const followUpDate = new Date();
                 followUpDate.setDate(followUpDate.getDate() + 7); // 1 week later
                 
-                db.run(
-                    `INSERT INTO follow_ups (email_id, follow_up_date, follow_up_number) 
-                     VALUES (?, ?, ?)`,
-                    [emailId, followUpDate.toISOString(), 1],
-                    (err) => {
-                        if (err) {
-                            console.error('Error creating follow-up:', err);
-                            reject(err);
-                            return;
-                        }
-                        resolve(emailId);
-                    }
+                followUpPromises.push(
+                    new Promise((resolve, reject) => {
+                        db.run(
+                            `INSERT INTO follow_ups (email_id, follow_up_date, follow_up_number) 
+                             VALUES (?, ?, ?)`,
+                            [emailId, followUpDate.toISOString(), 1],
+                            (err) => {
+                                if (err) {
+                                    console.error('Error creating follow-up:', err);
+                                    reject(err);
+                                    return;
+                                }
+                                resolve();
+                            }
+                        );
+                    })
                 );
+                
+                // If we have Excel data, create follow-ups for each email date
+                if (contactData.excel_first_email_date) {
+                    const firstEmailDate = new Date(contactData.excel_first_email_date);
+                    const followUpDate = new Date(firstEmailDate);
+                    followUpDate.setDate(followUpDate.getDate() + 7);
+                    
+                    followUpPromises.push(
+                        new Promise((resolve, reject) => {
+                            db.run(
+                                `INSERT INTO follow_ups (email_id, follow_up_date, follow_up_number) 
+                                 VALUES (?, ?, ?)`,
+                                [emailId, followUpDate.toISOString(), 1],
+                                (err) => {
+                                    if (err) {
+                                        console.error('Error creating Excel first email follow-up:', err);
+                                        reject(err);
+                                        return;
+                                    }
+                                    resolve();
+                                }
+                            );
+                        })
+                    );
+                }
+                
+                if (contactData.excel_second_email_date) {
+                    const secondEmailDate = new Date(contactData.excel_second_email_date);
+                    const followUpDate = new Date(secondEmailDate);
+                    followUpDate.setDate(followUpDate.getDate() + 7);
+                    
+                    followUpPromises.push(
+                        new Promise((resolve, reject) => {
+                            db.run(
+                                `INSERT INTO follow_ups (email_id, follow_up_date, follow_up_number) 
+                                 VALUES (?, ?, ?)`,
+                                [emailId, followUpDate.toISOString(), 2],
+                                (err) => {
+                                    if (err) {
+                                        console.error('Error creating Excel second email follow-up:', err);
+                                        reject(err);
+                                        return;
+                                    }
+                                    resolve();
+                                }
+                            );
+                        })
+                    );
+                }
+                
+                if (contactData.excel_third_email_date) {
+                    const thirdEmailDate = new Date(contactData.excel_third_email_date);
+                    const followUpDate = new Date(thirdEmailDate);
+                    followUpDate.setDate(followUpDate.getDate() + 7);
+                    
+                    followUpPromises.push(
+                        new Promise((resolve, reject) => {
+                            db.run(
+                                `INSERT INTO follow_ups (email_id, follow_up_date, follow_up_number) 
+                                 VALUES (?, ?, ?)`,
+                                [emailId, followUpDate.toISOString(), 3],
+                                (err) => {
+                                    if (err) {
+                                        console.error('Error creating Excel third email follow-up:', err);
+                                        reject(err);
+                                        return;
+                                    }
+                                    resolve();
+                                }
+                            );
+                        })
+                    );
+                }
+                
+                // Wait for all follow-ups to be created
+                Promise.all(followUpPromises)
+                    .then(() => resolve(emailId))
+                    .catch(err => reject(err));
             }
         );
     });
@@ -272,7 +410,7 @@ function completeFollowUp(followUpId, notes = '') {
 }
 
 // Get calendar data for a month
-function getCalendarData(year, month) {
+function getCalendarData(year, month, columnMapping = null) {
     return new Promise((resolve, reject) => {
         // Month is 0-indexed in JavaScript Date but we want to accept 1-indexed
         const startDate = new Date(year, month - 1, 1);
@@ -281,10 +419,18 @@ function getCalendarData(year, month) {
         const startDateStr = startDate.toISOString().split('T')[0];
         const endDateStr = endDate.toISOString().split('T')[0];
         
+        // Use column mapping if provided, otherwise use default column names
+        const firstEmailCol = columnMapping?.firstEmailColumn || 'excel_first_email_date';
+        const secondEmailCol = columnMapping?.secondEmailColumn || 'excel_second_email_date';
+        const thirdEmailCol = columnMapping?.thirdEmailColumn || 'excel_third_email_date';
+        
         // Get emails sent in the month
         const emailsPromise = new Promise((resolve, reject) => {
             db.all(
-                `SELECT id, recipient, subject, sent_date, company, contact_name 
+                `SELECT id, recipient, subject, sent_date, company, contact_name,
+                        excel_first_email_date, excel_first_email_status,
+                        excel_second_email_date, excel_second_email_status,
+                        excel_third_email_date, excel_third_email_status
                  FROM emails 
                  WHERE sent_date >= ? AND sent_date <= ?`,
                 [`${startDateStr}T00:00:00.000Z`, `${endDateStr}T23:59:59.999Z`],
@@ -303,7 +449,10 @@ function getCalendarData(year, month) {
         const followUpsPromise = new Promise((resolve, reject) => {
             db.all(
                 `SELECT f.id, f.follow_up_date, f.status, f.follow_up_number, 
-                        e.recipient, e.subject, e.company, e.contact_name 
+                        e.recipient, e.subject, e.company, e.contact_name,
+                        e.excel_first_email_date, e.excel_first_email_status,
+                        e.excel_second_email_date, e.excel_second_email_status,
+                        e.excel_third_email_date, e.excel_third_email_status
                  FROM follow_ups f
                  JOIN emails e ON f.email_id = e.id
                  WHERE f.follow_up_date >= ? AND f.follow_up_date <= ?`,
@@ -331,10 +480,68 @@ function getCalendarData(year, month) {
                     const day = date.getDate();
                     
                     if (!calendarData[day]) {
-                        calendarData[day] = { emails: [], followUps: [] };
+                        calendarData[day] = { emails: [], followUps: [], excelFollowUps: [] };
                     }
                     
                     calendarData[day].emails.push(email);
+                    
+                    // Add Excel email dates if they exist
+                    if (email.excel_first_email_date) {
+                        const excelDate = new Date(email.excel_first_email_date);
+                        if (excelDate.getMonth() + 1 === month && excelDate.getFullYear() === year) {
+                            const excelDay = excelDate.getDate();
+                            if (!calendarData[excelDay]) {
+                                calendarData[excelDay] = { emails: [], followUps: [], excelFollowUps: [] };
+                            }
+                            calendarData[excelDay].excelFollowUps.push({
+                                id: email.id,
+                                contact_name: email.contact_name,
+                                company: email.company,
+                                recipient: email.recipient,
+                                followUpDate: email.excel_first_email_date,
+                                status: email.excel_first_email_status,
+                                followUpNumber: 1
+                            });
+                        }
+                    }
+                    
+                    if (email.excel_second_email_date) {
+                        const excelDate = new Date(email.excel_second_email_date);
+                        if (excelDate.getMonth() + 1 === month && excelDate.getFullYear() === year) {
+                            const excelDay = excelDate.getDate();
+                            if (!calendarData[excelDay]) {
+                                calendarData[excelDay] = { emails: [], followUps: [], excelFollowUps: [] };
+                            }
+                            calendarData[excelDay].excelFollowUps.push({
+                                id: email.id,
+                                contact_name: email.contact_name,
+                                company: email.company,
+                                recipient: email.recipient,
+                                followUpDate: email.excel_second_email_date,
+                                status: email.excel_second_email_status,
+                                followUpNumber: 2
+                            });
+                        }
+                    }
+                    
+                    if (email.excel_third_email_date) {
+                        const excelDate = new Date(email.excel_third_email_date);
+                        if (excelDate.getMonth() + 1 === month && excelDate.getFullYear() === year) {
+                            const excelDay = excelDate.getDate();
+                            if (!calendarData[excelDay]) {
+                                calendarData[excelDay] = { emails: [], followUps: [], excelFollowUps: [] };
+                            }
+                            calendarData[excelDay].excelFollowUps.push({
+                                id: email.id,
+                                contact_name: email.contact_name,
+                                company: email.company,
+                                recipient: email.recipient,
+                                followUpDate: email.excel_third_email_date,
+                                status: email.excel_third_email_status,
+                                followUpNumber: 3
+                            });
+                        }
+                    }
                 });
                 
                 // Process follow-ups
@@ -343,7 +550,7 @@ function getCalendarData(year, month) {
                     const day = date.getDate();
                     
                     if (!calendarData[day]) {
-                        calendarData[day] = { emails: [], followUps: [] };
+                        calendarData[day] = { emails: [], followUps: [], excelFollowUps: [] };
                     }
                     
                     calendarData[day].followUps.push(followUp);
@@ -376,7 +583,7 @@ function getAllCompanies() {
 }
 
 // Get calendar data for a specific company
-function getCompanyCalendarData(year, month, company) {
+function getCompanyCalendarData(year, month, company, columnMapping = null) {
     return new Promise((resolve, reject) => {
         // Month is 0-indexed in JavaScript Date but we want to accept 1-indexed
         const startDate = new Date(year, month - 1, 1);
@@ -384,6 +591,11 @@ function getCompanyCalendarData(year, month, company) {
         
         const startDateStr = startDate.toISOString().split('T')[0];
         const endDateStr = endDate.toISOString().split('T')[0];
+        
+        // Use column mapping if provided, otherwise use default column names
+        const firstEmailCol = columnMapping?.firstEmailColumn || 'excel_first_email_date';
+        const secondEmailCol = columnMapping?.secondEmailColumn || 'excel_second_email_date';
+        const thirdEmailCol = columnMapping?.thirdEmailColumn || 'excel_third_email_date';
         
         // Get emails sent in the month for the specific company
         const emailsPromise = new Promise((resolve, reject) => {
@@ -775,7 +987,7 @@ function getCalendarDataForCompany(year, month, company) {
 }
 
 // Import follow-up data from Excel
-function importFollowUpDataFromExcel(excelFile, sheetName, contactData) {
+function importFollowUpDataFromExcel(excelFile, sheetName, contactData, columnMapping = null) {
     return new Promise((resolve, reject) => {
         try {
             // Check if we have follow-up data in the Excel
@@ -784,17 +996,40 @@ function importFollowUpDataFromExcel(excelFile, sheetName, contactData) {
                 return;
             }
             
-            // Extract follow-up data from Excel columns
-            // Columns M and N for first email, O and P for second, Q and R for third
-            const firstEmailDate = contactData['M'] || null;
-            const firstEmailStatus = contactData['N'] || null;
-            const secondEmailDate = contactData['O'] || null;
-            const secondEmailStatus = contactData['P'] || null;
-            const thirdEmailDate = contactData['Q'] || null;
-            const thirdEmailStatus = contactData['R'] || null;
+            // Use dynamic column mapping if provided, otherwise fall back to hardcoded columns
+            let firstEmailColumn, secondEmailColumn, thirdEmailColumn;
+            
+            if (columnMapping) {
+                firstEmailColumn = columnMapping.firstEmail || columnMapping.firstEmailColumn;
+                secondEmailColumn = columnMapping.secondEmail || columnMapping.secondEmailColumn;
+                thirdEmailColumn = columnMapping.thirdEmail || columnMapping.thirdEmailColumn;
+            } else {
+                // Fallback to hardcoded columns
+                firstEmailColumn = 'M';
+                secondEmailColumn = 'O';
+                thirdEmailColumn = 'Q';
+            }
+            
+            console.log('Using column mapping:', { firstEmailColumn, secondEmailColumn, thirdEmailColumn });
+            console.log('Available contact data keys:', Object.keys(contactData));
+            
+            // Extract follow-up data from Excel columns using dynamic column names
+            const firstEmailDate = contactData[firstEmailColumn] || null;
+            const firstEmailStatus = contactData[getStatusColumn(firstEmailColumn)] || null;
+            const secondEmailDate = contactData[secondEmailColumn] || null;
+            const secondEmailStatus = contactData[getStatusColumn(secondEmailColumn)] || null;
+            const thirdEmailDate = contactData[thirdEmailColumn] || null;
+            const thirdEmailStatus = contactData[getStatusColumn(thirdEmailColumn)] || null;
+            
+            console.log('Extracted email dates:', { 
+                firstEmailDate, 
+                secondEmailDate, 
+                thirdEmailDate 
+            });
             
             // If no follow-up data, return
             if (!firstEmailDate && !secondEmailDate && !thirdEmailDate) {
+                console.log('No follow-up data found in Excel columns');
                 resolve(null);
                 return;
             }
@@ -804,8 +1039,8 @@ function importFollowUpDataFromExcel(excelFile, sheetName, contactData) {
                 excelFile,
                 sheetName,
                 lineNumber: contactData.lineNumber,
-                company: contactData.company || contactData[Object.keys(contactData)[0]] || null,
-                contactName: contactData.Name || contactData['שם'] || null,
+                company: contactData.company || contactData.Company || contactData[Object.keys(contactData)[0]] || null,
+                contactName: contactData.Name || contactData.name || contactData['שם'] || null,
                 firstEmail: {
                     date: firstEmailDate ? new Date(firstEmailDate) : null,
                     status: firstEmailStatus
@@ -820,12 +1055,25 @@ function importFollowUpDataFromExcel(excelFile, sheetName, contactData) {
                 }
             };
             
+            console.log('Formatted follow-up data:', followUpData);
             resolve(followUpData);
         } catch (error) {
             console.error('Error importing follow-up data from Excel:', error);
             reject(error);
         }
     });
+}
+
+// Helper function to get the status column for a given date column
+function getStatusColumn(dateColumn) {
+    // Assume status column is the next column after the date column
+    // This is a simple implementation - you might need to adjust based on your Excel structure
+    if (typeof dateColumn === 'string' && dateColumn.length === 1) {
+        // For single letter columns (A-Z), get the next letter
+        return String.fromCharCode(dateColumn.charCodeAt(0) + 1);
+    }
+    // For other column formats, you might need different logic
+    return dateColumn + '_status'; // Fallback
 }
 
 // Update email with Excel follow-up data
