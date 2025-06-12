@@ -35,24 +35,33 @@ copy .env.example .env
 Edit the `.env` file and add your configuration:
 
 ```env
-# Email Configuration (for sending emails)
-EMAIL_USER=your-email@gmail.com
-EMAIL_PASSWORD=your-app-password
-
-# OpenAI API Configuration (for AI email improvement)
-OPENAI_API_KEY=your-openai-api-key-here
-
-# Server Configuration
+# Server configuration
 PORT=3000
+
+# Google Sheets API
+# Replace with your actual credentials path
+GOOGLE_APPLICATION_CREDENTIALS=credentials.json
+
+# Email configuration (for direct sending)
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=your-email@example.com
+SMTP_PASS=your-password
+DEFAULT_FROM_EMAIL=your-email@example.com
+
+# Anthropic API Key (for AI email improvement)
+ANTHROPIC_API_KEY=your-anthropic-api-key-here
 ```
 
 #### Getting Your API Keys:
 
-**OpenAI API Key:**
-1. Go to [OpenAI API Keys](https://platform.openai.com/api-keys)
+**Anthropic API Key:**
+1. Go to [Anthropic Console](https://console.anthropic.com/)
 2. Sign in or create an account
-3. Click "Create new secret key"
-4. Copy the key and add it to your `.env` file
+3. Navigate to API Keys section
+4. Click "Create Key"
+5. Copy the key and add it to your `.env` file
 
 **Email Configuration:**
 - For Gmail, use an App Password instead of your regular password
@@ -101,17 +110,24 @@ email-automation-app/
 
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `OPENAI_API_KEY` | OpenAI API key for email improvement | Yes (for AI features) |
-| `EMAIL_USER` | Email address for sending emails | Yes (for email sending) |
-| `EMAIL_PASSWORD` | Email password/app password | Yes (for email sending) |
+| `ANTHROPIC_API_KEY` | Anthropic API key for AI email improvement | Yes (for AI features) |
+| `SMTP_USER` | Email address for sending emails | Yes (for email sending) |
+| `SMTP_PASS` | Email password/app password | Yes (for email sending) |
+| `SMTP_HOST` | SMTP server hostname | Yes (for email sending) |
+| `SMTP_PORT` | SMTP server port | Yes (for email sending) |
+| `DEFAULT_FROM_EMAIL` | Default sender email address | Yes (for email sending) |
+| `GOOGLE_APPLICATION_CREDENTIALS` | Path to Google Sheets API credentials | Yes (for Google Sheets integration) |
 | `PORT` | Server port (default: 3000) | No |
 
 ## Security Notes
 
 - Never commit your `.env` file to version control
 - Use app passwords for email accounts when possible
-- Keep your OpenAI API key secure and monitor usage
+- Keep your Anthropic API key secure and monitor usage
 - The `.env` file is already included in `.gitignore`
+- Always use `.env.example` as a template for new environments
+- Regularly rotate API keys and passwords
+- Monitor your API usage and set up billing alerts
 
 ## Contributing
 
